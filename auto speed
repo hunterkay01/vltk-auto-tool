@@ -1,0 +1,594 @@
+// ==UserScript==
+// @name         VLTK Idle - Auto Updater & Full Tools v33.1
+// @namespace    http://tampermonkey.net/
+// @version      33.1
+// @description  Có lại Auto Event & Nút Cập nhật đặt dưới mục Tháp
+// @match        *://hoainiem2003.net/*
+// @allFrames    true
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_xmlhttpRequest
+// @run-at       document-end
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // 🔗 DÁN LINK CHỨA CODE MỚI CỦA BẠN VÀO ĐÂY (GitHub Raw / Gist Raw / Pastebin Raw)
+    const REMOTE_CODE_URL = 'https://raw.githubusercontent.com/username/repository/main/vltk_tool.js';
+
+    window.vltkSpeedEnabled = true;
+    window.vltkSelectedSpeed = 1;
+    window.vltkSpeed = 1;
+    
+    window.vltkAutoCS = true;
+    window.vltkAutoRemotePick = true;
+
+    window.vltkAutoThap1 = false;
+    window.vltkAutoThap2 = false;
+    window.vltkDodgeSkill = false;
+
+    let isCsProcessing = false;
+    let dodgeAngle = 0;
+    let isMinigameOpen = false;
+    let autoEventInterval = null;
+
+    function triggerFullClick(el) {
+        if (!el) return false;
+        const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+        events.forEach(evt => {
+            const e = new MouseEvent(evt, {
+                view: window,
+                bubbles: true,
+                cancelable: true
+            });
+            el.dispatchEvent(e);
+        });
+        if (typeof el.click === 'function') el.click();
+        return true;
+    }
+
+    function clickByText(text, exact = false) {
+        const allNodes = document.querySelectorAll('button, div, span, a, p, td');
+        let found = false;
+        for (let el of allNodes) {
+            if (el.innerText) {
+                const inner = el.innerText.trim();
+                if (exact ? inner === text : inner.includes(text)) {
+                    triggerFullClick(el);
+                    found = true;
+                }
+            }
+        }
+        return found;
+    }
+
+    // 🔄 HÀM CẬP NHẬT CODE MỚI TỪ LINK CỐ ĐỊNH
+    function performAutoUpdate(btnUpdate) {
+        if (REMOTE_CODE_URL.includes('username/repository')) {
+            alert('Bạn cần dán Link chứa Code mới (GitHub Raw / Gist / Pastebin) vào biến REMOTE_CODE_URL trong script trước!');
+            return;
+        }
+
+        btnUpdate.innerText = '⏳ Đang tải...';
+        btnUpdate.style.background = '#fab387';
+
+        if (typeof GM_xmlhttpRequest !== 'undefined') {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: REMOTE_CODE_URL + '?t=' + new Date().getTime(),
+                onload: function(response) {
+                    if (response.status === 200 && response.responseText.length > 100) {
+                        try {
+                            new Function(response.responseText);
+                            localStorage.setItem('VLTK_CUSTOM_SCRIPT', response.responseText);
+                            btnUpdate.innerText = '✅ Thành công!';
+                            btnUpdate.style.background = '#a6e3a1';
+                            alert('Cập nhật bản mới thành công! Trang web sẽ tự động tải lại.');
+                            location.reload();
+                        } catch(e) {
+                            alert('Lỗi: Code mới tải về bị lỗi cú pháp!');
+                            btnUpdate.innerText = '❌ Lỗi Code';
+                            btnUpdate.style.background = '#f38ba8';
+                        }
+                    } else {
+                        alert('Không thể kết nối lấy code mới! Vui lòng kiểm tra lại Link.');
+                        btnUpdate.innerText = '🔄 Cập nhật Tool';
+                        btnUpdate.style.background = '#89b4fa';
+                    }
+                },
+                onerror: function() {
+                    alert('Lỗi kết nối mạng khi tải bản cập nhật!');
+                    btnUpdate.innerText = '🔄 Cập nhật Tool';
+                    btnUpdate.style.background = '#89b4fa';
+                }
+            });
+        } else {
+            fetch(REMOTE_CODE_URL + '?t=' + new Date().getTime())
+                .then(res => res.text())
+                .then(code => {
+                    localStorage.setItem('VLTK_CUSTOM_SCRIPT', code);
+                    alert('Cập nhật bản mới thành công! Trang web sẽ tự động tải lại.');
+                    location.reload();
+                })
+                .catch(() => alert('Lỗi tải bản cập nhật!'));
+        }
+    }
+
+    // CHẠY CODE LƯU TRONG LOCALSTORAGE NẾU CÓ
+    const savedCustomScript = localStorage.getItem('VLTK_CUSTOM_SCRIPT');
+    if (savedCustomScript && !window.vltkScriptInjected) {
+        window.vltkScriptInjected = true;
+        try {
+            eval(savedCustomScript);
+            return;
+        } catch(e) {
+            localStorage.removeItem('VLTK_CUSTOM_SCRIPT');
+        }
+    }
+
+    // KIỂM TRA TRẠNG THÁI TRÒ CHƠI
+    function checkMinigameStatus() {
+        try {
+            const gameKeywords = ['Trò chơi', 'Mini Game', 'Vòng quay', 'Lật hình', 'Xúc xắc', 'Cờ tỷ phú', 'Tài xỉu', 'Bầu cua'];
+            const allElements = document.querySelectorAll('div, span, iframe, section');
+            let detected = false;
+            for (let el of allElements) {
+                if (el.offsetWidth > 0 && el.offsetHeight > 0) {
+                    const txt = el.innerText ? el.innerText.trim() : '';
+                    if (gameKeywords.some(kw => txt.includes(kw)) && (el.style.display !== 'none' && el.style.visibility !== 'hidden')) {
+                        if (el.classList.contains('popup') || el.classList.contains('dialog') || el.classList.contains('modal') || el.id.includes('game') || el.id.includes('mini')) {
+                            detected = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (typeof Mi !== 'undefined' && (Mi.inMinigame || Mi.isMinigameOpen)) detected = true;
+            isMinigameOpen = detected;
+        } catch(e) { isMinigameOpen = false; }
+    }
+
+    // AUTO VÀO LẠI THÁP 1 / THÁP 2
+    function executeAutoThapSequence() {
+        if (!window.vltkAutoThap1 && !window.vltkAutoThap2) return;
+        try {
+            if (typeof Mi !== 'undefined') {
+                const isDead = (Mi.P && (Mi.P.hp <= 0 || Mi.P.isDead));
+                const inThap = (Mi.mapName && Mi.mapName.includes('Tháp')) || (Mi.inThap === true);
+                if (isDead || !inThap) {
+                    clickByText('Hồi sinh');
+                    clickByText('Về thành');
+                    setTimeout(() => {
+                        clickByText('Tháp');
+                        clickByText('Võ Quán');
+                        setTimeout(() => {
+                            if (window.vltkAutoThap1) {
+                                if (Mi.socket && typeof Mi.socket.emit === 'function') Mi.socket.emit('goThap', { id: 1 });
+                                clickByText('Tháp 1');
+                            } else if (window.vltkAutoThap2) {
+                                if (Mi.socket && typeof Mi.socket.emit === 'function') Mi.socket.emit('goThap', { id: 2 });
+                                clickByText('Tháp 2');
+                            }
+                            clickByText('Thử thách');
+                            clickByText('Vào tháp');
+                        }, 300);
+                    }, 500);
+                }
+            }
+        } catch(e) {}
+    }
+
+    // NÉ SKILL QUÁI
+    function executeDodgeAndAttack() {
+        try {
+            if (typeof Mi !== 'undefined' && Mi.P) {
+                if (typeof Mi.useSkill === 'function') Mi.useSkill();
+                if (window.vltkDodgeSkill) {
+                    dodgeAngle += 0.2;
+                    const radius = 120;
+                    let centerX = Mi.P.x || 400;
+                    let centerY = Mi.P.y || 300;
+                    if (Mi.monsters && Mi.monsters.length > 0 && Mi.monsters[0]) {
+                        centerX = Mi.monsters[0].x || centerX;
+                        centerY = Mi.monsters[0].y || centerY;
+                    }
+                    const targetX = centerX + Math.cos(dodgeAngle) * radius;
+                    const targetY = centerY + Math.sin(dodgeAngle) * radius;
+                    if (typeof Mi.moveTo === 'function') Mi.moveTo(targetX, targetY);
+                    else { Mi.P.x = targetX; Mi.P.y = targetY; }
+                }
+            }
+        } catch(e) {}
+    }
+
+    // AUTO CHUYỂN SINH
+    function executeAutoRebirthSequence() {
+        if (!window.vltkAutoCS || isCsProcessing) return;
+        try {
+            if (typeof Mi !== 'undefined') {
+                const hasCsButton = Array.from(document.querySelectorAll('button, div, span, a')).some(
+                    el => el.innerText && el.innerText.trim().includes('Chuyển sinh')
+                );
+                if (hasCsButton || (Mi.P && Mi.P.lv >= 140)) {
+                    isCsProcessing = true;
+                    if (Mi.socket && typeof Mi.socket.emit === 'function') Mi.socket.emit('cs');
+                    clickByText('Chuyển sinh');
+                    setTimeout(() => {
+                        clickByText('Chắc chắn');
+                        clickByText('Về cấp 1');
+                        setTimeout(() => { isCsProcessing = false; }, 500);
+                    }, 400);
+                }
+            }
+        } catch(e) { isCsProcessing = false; }
+    }
+
+    // AUTO ĐỔI EVENT
+    function getEventItemList() {
+        const items = [];
+        const allNodes = document.querySelectorAll('div, span, td, p, button, a');
+        allNodes.forEach(node => {
+            if (node.innerText && node.innerText.trim() === 'Đổi') {
+                let parent = node.parentElement;
+                for (let i = 0; i < 4 && parent; i++) {
+                    const txt = parent.innerText ? parent.innerText.replace(/\n/g, ' ').trim() : '';
+                    if (txt && txt.includes('Bánh Trung Thu') && txt.includes('Đổi')) {
+                        let cleanName = txt.split('Đổi')[0].split(/\d+\s*Bánh/)[0].trim();
+                        if (cleanName && cleanName.length < 30 && !items.some(it => it.text === cleanName)) {
+                            items.push({ text: cleanName, top: node.getBoundingClientRect().top });
+                        }
+                        break;
+                    }
+                    parent = parent.parentElement;
+                }
+            }
+        });
+        return items;
+    }
+
+    function exchangeSelectedItem(times = 1) {
+        const sel = document.getElementById('v-sel-event');
+        if (!sel || !sel.value) return alert('Vui lòng mở tab Sự kiện rồi bấm Quét Món!');
+
+        const targetText = sel.value.trim();
+        let count = 0;
+
+        const timer = setInterval(() => {
+            let targetY = -1;
+            const allNodes = document.querySelectorAll('div, span, td, p, button, a');
+
+            for (let node of allNodes) {
+                if (node.innerText && node.innerText.trim() === targetText) {
+                    targetY = node.getBoundingClientRect().top;
+                    break;
+                }
+            }
+
+            let clicked = false;
+            if (targetY > 0) {
+                for (let node of allNodes) {
+                    if (node.innerText && node.innerText.trim() === 'Đổi') {
+                        const rect = node.getBoundingClientRect();
+                        if (Math.abs(rect.top - targetY) < 30) {
+                            triggerFullClick(node);
+                            clicked = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            count++;
+            if (count >= times || !clicked) clearInterval(timer);
+        }, 100);
+    }
+
+    // CAN THIỆP ENGINE TỐC ĐỘ SỐNG
+    const originalRAF = window.requestAnimationFrame;
+    let lastTime = performance.now();
+    let virtualTime = lastTime;
+
+    window.requestAnimationFrame = function(callback) {
+        return originalRAF(function(now) {
+            const dt = now - lastTime;
+            lastTime = now;
+            const currentSpeed = (window.vltkSpeedEnabled && !isMinigameOpen) ? (window.vltkSelectedSpeed || 1) : 1;
+            virtualTime += dt * currentSpeed;
+            try {
+                if (typeof Mi !== 'undefined') {
+                    Mi.spawnT = 0;
+                    if (Mi.monsters && Mi.monsters.length === 0) {
+                        if (typeof Mi.spawnMonster === 'function') Mi.spawnMonster();
+                        if (Mi.socket && typeof Mi.socket.emit === 'function') Mi.socket.emit('spawn');
+                    }
+                    if (window.vltkAutoRemotePick) Mi.pickDist = 99999;
+                    executeDodgeAndAttack();
+                }
+            } catch(e) {}
+            callback(virtualTime);
+        });
+    };
+
+    setInterval(() => {
+        checkMinigameStatus();
+        if (window.vltkAutoCS) executeAutoRebirthSequence();
+        executeAutoThapSequence();
+    }, 1000);
+
+    // GIAO DIỆN BẢNG ĐIỀU KHIỂN
+    function injectUI() {
+        if (document.getElementById('vltk-dock-container')) return;
+        const targetBody = document.body || document.documentElement;
+        if (!targetBody) return;
+
+        const container = document.createElement('div');
+        container.id = 'vltk-dock-container';
+        container.innerHTML = `
+            <div id="v-dock-bar" style="
+                position: fixed; top: 120px; left: 10px; z-index: 2147483647;
+                display: flex; flex-direction: column; gap: 8px;
+                background: rgba(24, 24, 37, 0.95); border: 2px solid #f9e2af; border-radius: 12px;
+                padding: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.8); user-select: none;
+            ">
+                <div id="v-dock-drag" style="cursor: move; text-align: center; color: #f9e2af; font-size: 10px; font-weight: bold; padding-bottom: 2px; border-bottom: 1px dashed #45475a;">🖐️</div>
+                <button id="v-icon-speed" style="background:#313244; color:#f9e2af; border:1px solid #45475a; border-radius:8px; width:42px; height:42px; font-size:20px; cursor:pointer;" title="Hack Speed">⚡</button>
+                <button id="v-icon-event" style="background:#313244; color:#f9e2af; border:1px solid #45475a; border-radius:8px; width:42px; height:42px; font-size:20px; cursor:pointer;" title="Auto Đổi Event">🎁</button>
+                <button id="v-icon-auto" style="background:#313244; color:#f9e2af; border:1px solid #45475a; border-radius:8px; width:42px; height:42px; font-size:20px; cursor:pointer;" title="Auto Chuyển Sinh & Vào Tháp">🔄</button>
+            </div>
+
+            <div id="v-popup-panel" style="
+                position: fixed; top: 120px; left: 75px; z-index: 2147483647;
+                background: #181825; border: 2px solid #f9e2af; border-radius: 10px;
+                padding: 12px; color: #cdd6f4; font-family: Tahoma, Arial, sans-serif;
+                font-size: 12px; width: 260px; box-shadow: 0 5px 20px rgba(0,0,0,0.9);
+                display: none; user-select: none;
+            ">
+                <div id="v-popup-drag" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; cursor: move; background: #232334; padding: 4px 8px; border-radius: 5px;">
+                    <div id="v-popup-title" style="font-weight: bold; color: #f9e2af; font-size: 12px;">🖐️ TÊN BẢNG (Kéo)</div>
+                    <button id="v-popup-close" style="background:#f38ba8; color:#11111b; border:none; border-radius:4px; width:20px; height:20px; cursor:pointer; font-weight:bold;">✖</button>
+                </div>
+
+                <!-- BOX 1: SPEED -->
+                <div id="v-box-speed" class="v-box-content" style="display:none;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #a6adc8; font-weight: bold;">⚡ Hack Speed:</span>
+                        <button id="v-btn-sw" style="background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; padding: 3px 10px; font-weight: bold; cursor: pointer;">ON</button>
+                    </div>
+                    <div style="display: flex; gap: 3px; margin-bottom: 4px;">
+                        <button class="v-btn spd" data-val="1" style="flex:1; background:#313244; color:#cdd6f4; border:1px solid #45475a; border-radius:4px; padding:5px 0; cursor:pointer; font-weight:bold;">x1</button>
+                        <button class="v-btn spd" data-val="2" style="flex:1; background:#313244; color:#cdd6f4; border:1px solid #45475a; border-radius:4px; padding:5px 0; cursor:pointer; font-weight:bold;">x2</button>
+                        <button class="v-btn spd" data-val="5" style="flex:1; background:#313244; color:#cdd6f4; border:1px solid #45475a; border-radius:4px; padding:5px 0; cursor:pointer; font-weight:bold;">x5</button>
+                        <button class="v-btn spd" data-val="10" style="flex:1; background:#313244; color:#cdd6f4; border:1px solid #45475a; border-radius:4px; padding:5px 0; cursor:pointer; font-weight:bold;">x10</button>
+                    </div>
+                    <div style="display: flex; gap: 3px;">
+                        <button class="v-btn spd" data-val="20" style="flex:1; background:#313244; color:#fab387; border:1px solid #45475a; border-radius:4px; padding:5px 0; cursor:pointer; font-weight:bold;">x20</button>
+                        <button class="v-btn spd" data-val="50" style="flex:1; background:#313244; color:#f38ba8; border:1px solid #45475a; border-radius:4px; padding:5px 0; cursor:pointer; font-weight:bold;">x50</button>
+                        <button class="v-btn spd" data-val="100" style="flex:1; background:#313244; color:#a6e3a1; border:1px solid #45475a; border-radius:4px; padding:5px 0; cursor:pointer; font-weight:bold;">x100</button>
+                    </div>
+                </div>
+
+                <!-- BOX 2: AUTO ĐỔI EVENT -->
+                <div id="v-box-event" class="v-box-content" style="display:none;">
+                    <select id="v-sel-event" style="width: 100%; background: #11111b; color: #a6e3a1; border: 1px solid #45475a; border-radius: 3px; padding: 5px; font-size: 11px; margin-bottom: 8px; outline: none;">
+                        <option value="">-- Mở tab Event rồi bấm Quét --</option>
+                    </select>
+                    <div style="display: flex; gap: 4px;">
+                        <button id="v-btn-scan-ev" style="flex:1; background: #89b4fa; color: #11111b; border: none; border-radius: 3px; padding: 6px 0; font-weight: bold; cursor: pointer;">🔍 Quét Món</button>
+                        <button id="v-btn-do-ev10" style="flex:1; background: #fab387; color: #11111b; border: none; border-radius: 3px; padding: 6px 0; font-weight: bold; cursor: pointer;">⚡ Đổi 10L</button>
+                        <button id="v-btn-do-evauto" style="flex:1; background: #a6e3a1; color: #11111b; border: none; border-radius: 3px; padding: 6px 0; font-weight: bold; cursor: pointer;">🔁 Auto Đổi</button>
+                    </div>
+                </div>
+
+                <!-- BOX 3: AUTO TỰ ĐỘNG & NÚT CẬP NHẬT Ở DƯỚI -->
+                <div id="v-box-auto" class="v-box-content" style="display:none;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                        <span style="color: #a6adc8; font-weight: bold;">🧲 Auto Nhặt Từ Xa:</span>
+                        <button id="v-btn-pick" style="background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; padding: 2px 8px; font-weight: bold; cursor: pointer;">ON</button>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                        <span style="color: #a6adc8; font-weight: bold;">🔄 Auto Chuyển Sinh:</span>
+                        <button id="v-btn-cs" style="background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; padding: 2px 8px; font-weight: bold; cursor: pointer;">ON</button>
+                    </div>
+
+                    <div style="background: #232334; padding: 6px 8px; border-radius: 5px; margin-top: 6px;">
+                        <div style="color: #fab387; font-weight: bold; text-align: center; margin-bottom: 4px;">🏰 Auto Vào Lại Tháp Khi Chết:</div>
+                        <div style="display: flex; justify-content: space-around; margin-bottom: 4px;">
+                            <label style="cursor: pointer; color: #f9e2af; font-weight: bold;">
+                                <input type="checkbox" id="v-chk-thap1" style="vertical-align: middle;"> Tháp 1
+                            </label>
+                            <label style="cursor: pointer; color: #f9e2af; font-weight: bold;">
+                                <input type="checkbox" id="v-chk-thap2" style="vertical-align: middle;"> Tháp 2
+                            </label>
+                        </div>
+                        <div style="border-top: 1px dashed #45475a; padding-top: 4px; text-align: center;">
+                            <label style="cursor: pointer; color: #a6e3a1; font-weight: bold;">
+                                <input type="checkbox" id="v-chk-dodge" style="vertical-align: middle;"> Né Skill Quái (Chạy quanh)
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- NÚT CẬP NHẬT TOOL ĐẶT Ở DƯỚI CÙNG -->
+                    <div style="margin-top: 10px; border-top: 1px solid #45475a; padding-top: 8px;">
+                        <button id="v-btn-update-code" style="width: 100%; background: #89b4fa; color: #11111b; border: none; border-radius: 4px; padding: 6px 0; font-weight: bold; cursor: pointer;">🔄 Cập nhật Tool Mới</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        targetBody.appendChild(container);
+
+        const dockBar = container.querySelector('#v-dock-bar');
+        const dockDrag = container.querySelector('#v-dock-drag');
+        const popup = container.querySelector('#v-popup-panel');
+        const popupDrag = container.querySelector('#v-popup-drag');
+        const popupTitle = container.querySelector('#v-popup-title');
+        const popupClose = container.querySelector('#v-popup-close');
+
+        let dragD = false, oxD = 0, oyD = 0;
+        dockDrag.addEventListener('mousedown', (e) => {
+            dragD = true;
+            oxD = e.clientX - dockBar.offsetLeft;
+            oyD = e.clientY - dockBar.offsetTop;
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (dragD) {
+                dockBar.style.left = (e.clientX - oxD) + 'px';
+                dockBar.style.top = (e.clientY - oyD) + 'px';
+            }
+        });
+        document.addEventListener('mouseup', () => dragD = false);
+
+        let dragP = false, oxP = 0, oyP = 0;
+        popupDrag.addEventListener('mousedown', (e) => {
+            if (e.target === popupClose) return;
+            dragP = true;
+            oxP = e.clientX - popup.offsetLeft;
+            oyP = e.clientY - popup.offsetTop;
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (dragP) {
+                popup.style.left = (e.clientX - oxP) + 'px';
+                popup.style.top = (e.clientY - oyP) + 'px';
+            }
+        });
+        document.addEventListener('mouseup', () => dragP = false);
+
+        const btnSpeed = container.querySelector('#v-icon-speed');
+        const btnEvent = container.querySelector('#v-icon-event');
+        const btnAuto = container.querySelector('#v-icon-auto');
+
+        const boxSpeed = container.querySelector('#v-box-speed');
+        const boxEvent = container.querySelector('#v-box-event');
+        const boxAuto = container.querySelector('#v-box-auto');
+
+        function openTab(box, title, activeBtn) {
+            [boxSpeed, boxEvent, boxAuto].forEach(b => b.style.display = 'none');
+            [btnSpeed, btnEvent, btnAuto].forEach(b => b.style.borderColor = '#45475a');
+
+            if (popup.style.display === 'block' && popupTitle.innerText.includes(title)) {
+                popup.style.display = 'none';
+            } else {
+                popup.style.display = 'block';
+                box.style.display = 'block';
+                popupTitle.innerText = '🖐️ ' + title;
+                activeBtn.style.borderColor = '#a6e3a1';
+            }
+        }
+
+        btnSpeed.onclick = () => openTab(boxSpeed, '⚡ HACK SPEED', btnSpeed);
+        btnEvent.onclick = () => openTab(boxEvent, '🎁 AUTO ĐỔI EVENT', btnEvent);
+        btnAuto.onclick = () => openTab(boxAuto, '🔄 AUTO TỰ ĐỘNG', btnAuto);
+
+        popupClose.onclick = () => {
+            popup.style.display = 'none';
+            [btnSpeed, btnEvent, btnAuto].forEach(b => b.style.borderColor = '#45475a');
+        };
+
+        // EVENT CONTROLS
+        const selEvent = container.querySelector('#v-sel-event');
+        const btnScanEv = container.querySelector('#v-btn-scan-ev');
+        const btnDoEv10 = container.querySelector('#v-btn-do-ev10');
+        const btnDoEvAuto = container.querySelector('#v-btn-do-evauto');
+
+        btnScanEv.onclick = () => {
+            const list = getEventItemList();
+            selEvent.innerHTML = '';
+            if (list.length === 0) {
+                selEvent.innerHTML = '<option value="">(Không tìm thấy, mở tab Event thử lại)</option>';
+                alert('Vui lòng mở tab Sự kiện trong game trước rồi nhấn Quét Món lại!');
+            } else {
+                list.forEach(item => {
+                    const opt = document.createElement('option');
+                    opt.value = item.text;
+                    opt.innerText = item.text;
+                    selEvent.appendChild(opt);
+                });
+            }
+        };
+
+        btnDoEv10.onclick = () => exchangeSelectedItem(10);
+
+        let isAutoEvRunning = false;
+        btnDoEvAuto.onclick = () => {
+            isAutoEvRunning = !isAutoEvRunning;
+            if (isAutoEvRunning) {
+                btnDoEvAuto.innerText = '⏹️ Dừng';
+                btnDoEvAuto.style.background = '#f38ba8';
+                autoEventInterval = setInterval(() => exchangeSelectedItem(1), 100);
+            } else {
+                btnDoEvAuto.innerText = '🔁 Auto Đổi';
+                btnDoEvAuto.style.background = '#a6e3a1';
+                clearInterval(autoEventInterval);
+            }
+        };
+
+        // NÚT CẬP NHẬT TOOL ĐẶT TẠI TAB AUTO
+        const btnUpdateCode = container.querySelector('#v-btn-update-code');
+        btnUpdateCode.onclick = () => performAutoUpdate(btnUpdateCode);
+
+        const btnSw = container.querySelector('#v-btn-sw');
+        btnSw.onclick = () => {
+            window.vltkSpeedEnabled = !window.vltkSpeedEnabled;
+            btnSw.innerText = window.vltkSpeedEnabled ? 'ON' : 'OFF';
+            btnSw.style.background = window.vltkSpeedEnabled ? '#a6e3a1' : '#f38ba8';
+        };
+
+        container.querySelectorAll('.v-btn.spd').forEach(btn => {
+            btn.onclick = () => {
+                container.querySelectorAll('.v-btn.spd').forEach(b => {
+                    b.style.background = '#313244';
+                    b.style.color = '#cdd6f4';
+                });
+                btn.style.background = '#a6e3a1';
+                btn.style.color = '#11111b';
+                window.vltkSelectedSpeed = parseFloat(btn.dataset.val);
+                window.vltkSpeedEnabled = true;
+                btnSw.innerText = 'ON';
+                btnSw.style.background = '#a6e3a1';
+            };
+        });
+
+        const btnPick = container.querySelector('#v-btn-pick');
+        const btnCS = container.querySelector('#v-btn-cs');
+
+        btnPick.onclick = () => {
+            window.vltkAutoRemotePick = !window.vltkAutoRemotePick;
+            btnPick.innerText = window.vltkAutoRemotePick ? 'ON' : 'OFF';
+            btnPick.style.background = window.vltkAutoRemotePick ? '#a6e3a1' : '#f38ba8';
+        };
+
+        btnCS.onclick = () => {
+            window.vltkAutoCS = !window.vltkAutoCS;
+            btnCS.innerText = window.vltkAutoCS ? 'ON' : 'OFF';
+            btnCS.style.background = window.vltkAutoCS ? '#a6e3a1' : '#f38ba8';
+        };
+
+        const chkThap1 = container.querySelector('#v-chk-thap1');
+        const chkThap2 = container.querySelector('#v-chk-thap2');
+        const chkDodge = container.querySelector('#v-chk-dodge');
+
+        chkThap1.onchange = (e) => {
+            window.vltkAutoThap1 = e.target.checked;
+            if (e.target.checked) {
+                window.vltkAutoThap2 = false;
+                chkThap2.checked = false;
+            }
+        };
+
+        chkThap2.onchange = (e) => {
+            window.vltkAutoThap2 = e.target.checked;
+            if (e.target.checked) {
+                window.vltkAutoThap1 = false;
+                chkThap1.checked = false;
+            }
+        };
+
+        chkDodge.onchange = (e) => {
+            window.vltkDodgeSkill = e.target.checked;
+        };
+    }
+
+    injectUI();
+    setInterval(injectUI, 2000);
+})();
