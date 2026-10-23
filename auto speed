@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         VLTK Idle - Full Auto & Canvas Snake v38.1
+// @name         VLTK Idle - Real-Time Canvas Vision Snake Bot v39.0
 // @namespace    http://tampermonkey.net/
-// @version      38.1
-// @description  Tool tổng hợp: Hack Speed, Auto CS, Auto Tháp, Auto Event & Canvas Snake Bot
+// @version      39.0
+// @description  Tự động quét Pixel Canvas #arena, định vị chấm vàng & chạy thuật toán BFS ăn mồi không đâm đuôi/tường
 // @match        *://hoainiem2003.net/*
 // @allFrames    true
 // @grant        none
@@ -24,7 +24,7 @@
     window.vltkAutoThap1 = false;
     window.vltkAutoThap2 = false;
     window.vltkDodgeSkill = false;
-    window.vltkAutoSnake = true;
+    window.vltkAutoSnake = true; // Auto Rắn săn mồi qua Vision Engine
 
     let isCsProcessing = false;
     let dodgeAngle = 0;
@@ -61,45 +61,22 @@
         return found;
     }
 
-    // 🐍 XỬ LÝ AUTO RẮN SĂN MỒI TRÊN CANVAS #ARENA
-    let snakeStep = 0;
-    const arrowKeys = [
-        { code: 39, name: 'ArrowRight' },
-        { code: 40, name: 'ArrowDown' },
-        { code: 37, name: 'ArrowLeft' },
-        { code: 38, name: 'ArrowUp' }
+    // =========================================================================
+    // 🐍 ENGINE THỊ GIÁC CANVAS & THUẬT TOÁN BFS DỰA TRÊN MA TRẬN PIXEL
+    // =========================================================================
+    let currentDir = 0; // 0: Right, 1: Down, 2: Left, 3: Up
+    const dirKeys = [
+        { name: 'ArrowRight', code: 39, dx: 1, dy: 0 },
+        { name: 'ArrowDown', code: 40, dx: 0, dy: 1 },
+        { name: 'ArrowLeft', code: 37, dx: -1, dy: 0 },
+        { name: 'ArrowUp', code: 38, dx: 0, dy: -1 }
     ];
 
-    function processAutoSnakeArena() {
-        if (!window.vltkAutoSnake) return;
-
-        const cv = document.getElementById('arena');
-        if (!cv) return;
-
+    function sendKeyToTarget(cv, keyObj) {
         try {
             cv.focus();
-            const rect = cv.getBoundingClientRect();
-
-            if (rect.width > 0 && rect.height > 0) {
-                // Click khu vực nút "Chơi lại" trên Canvas (X: 38%, Y: 63%)
-                const clickX = rect.left + rect.width * 0.38;
-                const clickY = rect.top + rect.height * 0.63;
-
-                ['mousedown', 'mouseup', 'click'].forEach(evtName => {
-                    const mEvt = new MouseEvent(evtName, {
-                        clientX: clickX,
-                        clientY: clickY,
-                        bubbles: true,
-                        cancelable: true
-                    });
-                    cv.dispatchEvent(mEvt);
-                });
-            }
-
-            // Gửi sự kiện bàn phím vào Canvas #arena
-            const keyObj = arrowKeys[snakeStep % 4];
-            ['keydown', 'keyup'].forEach(type => {
-                const kEvt = new KeyboardEvent(type, {
+            ['keydown', 'keyup'].forEach(evtType => {
+                const kEvt = new KeyboardEvent(evtType, {
                     key: keyObj.name,
                     code: keyObj.name,
                     keyCode: keyObj.code,
@@ -110,9 +87,140 @@
                 });
                 cv.dispatchEvent(kEvt);
                 window.dispatchEvent(kEvt);
+                document.dispatchEvent(kEvt);
             });
+        } catch(e) {}
+    }
 
-            snakeStep++;
+    function autoRestartCanvas(cv) {
+        const rect = cv.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+            const clickX = rect.left + rect.width * 0.38;
+            const clickY = rect.top + rect.height * 0.63;
+
+            ['mousedown', 'mouseup', 'click'].forEach(evtName => {
+                const mEvt = new MouseEvent(evtName, {
+                    clientX: clickX,
+                    clientY: clickY,
+                    bubbles: true,
+                    cancelable: true
+                });
+                cv.dispatchEvent(mEvt);
+            });
+        }
+    }
+
+    function processSnakeVisionAndPathfinding() {
+        if (!window.vltkAutoSnake) return;
+
+        const cv = document.getElementById('arena');
+        if (!cv || cv.offsetWidth === 0) return;
+
+        // 1. Luôn tự nhấp Chơi lại khi màn chơi dừng
+        autoRestartCanvas(cv);
+
+        const ctx = cv.getContext('2d');
+        if (!ctx) return;
+
+        const w = cv.width || 480;
+        const h = cv.height || 480;
+
+        // Giả định lưới bàn cờ tiêu chuẩn 15x15 hoặc 20x20
+        const cols = 15;
+        const rows = 15;
+        const cellW = w / cols;
+        const cellH = h / rows;
+
+        let head = null;
+        let food = null;
+        const grid = Array.from({ length: rows }, () => Array(cols).fill(0)); // 0: Trống, 1: Thân rắn
+
+        try {
+            const imgData = ctx.getImageData(0, 0, w, h);
+            const pixels = imgData.data;
+
+            // 2. Quét ma trận Pixel để định vị Đầu rắn, Thân rắn & Mồi vàng
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const cx = Math.floor(c * cellW + cellW / 2);
+                    const cy = Math.floor(r * cellH + cellH / 2);
+                    const idx = (cy * w + cx) * 4;
+
+                    const red = pixels[idx];
+                    const green = pixels[idx + 1];
+                    const blue = pixels[idx + 2];
+
+                    // Phát hiện hạt mồi tròn vàng/cam
+                    if (red > 200 && green > 140 && blue < 80) {
+                        food = { x: c, y: r };
+                    }
+                    // Phát hiện đầu rắn (Màu xanh lá tươi sáng + mắt)
+                    else if (green > 180 && red < 160 && blue < 150) {
+                        if (!head) head = { x: c, y: r };
+                        grid[r][c] = 1; // Đánh dấu ô chứa rắn
+                    }
+                    // Phát hiện thân rắn (Màu xanh lá đậm)
+                    else if (green > 100 && red < 140 && blue < 120) {
+                        grid[r][c] = 1;
+                    }
+                }
+            }
+
+            if (!head) return;
+
+            // 3. Thuật toán BFS tìm đường ngắn nhất tới mồi vàng
+            let nextMoveDir = -1;
+
+            if (food) {
+                const queue = [[head.x, head.y, []]];
+                const visited = Array.from({ length: rows }, () => Array(cols).fill(false));
+                visited[head.y][head.x] = true;
+
+                while (queue.length > 0) {
+                    const [cx, cy, path] = queue.shift();
+
+                    if (cx === food.x && cy === food.y && path.length > 0) {
+                        nextMoveDir = path[0];
+                        break;
+                    }
+
+                    for (let d = 0; d < 4; d++) {
+                        // Không quay ngược 180 độ
+                        if ((d === 0 && currentDir === 2) || (d === 2 && currentDir === 0) ||
+                            (d === 1 && currentDir === 3) || (d === 3 && currentDir === 1)) continue;
+
+                        const nx = cx + dirKeys[d].dx;
+                        const ny = cy + dirKeys[d].dy;
+
+                        if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && !visited[ny][nx] && grid[ny][nx] === 0) {
+                            visited[ny][nx] = true;
+                            queue.push([nx, ny, [...path, d]]);
+                        }
+                    }
+                }
+            }
+
+            // 4. Nếu BFS bị bế tắc, tìm ô trống safe lân cận để né tường & thân
+            if (nextMoveDir === -1) {
+                for (let d = 0; d < 4; d++) {
+                    if ((d === 0 && currentDir === 2) || (d === 2 && currentDir === 0) ||
+                        (d === 1 && currentDir === 3) || (d === 3 && currentDir === 1)) continue;
+
+                    const nx = head.x + dirKeys[d].dx;
+                    const ny = head.y + dirKeys[d].dy;
+
+                    if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && grid[ny][nx] === 0) {
+                        nextMoveDir = d;
+                        break;
+                    }
+                }
+            }
+
+            // 5. Thực thi phím di chuyển chuẩn
+            if (nextMoveDir !== -1) {
+                currentDir = nextMoveDir;
+                sendKeyToTarget(cv, dirKeys[nextMoveDir]);
+            }
         } catch(e) {}
     }
 
@@ -144,7 +252,7 @@
             isMinigameOpen = !!(arenaCanvas && arenaCanvas.offsetWidth > 0);
 
             if (isMinigameOpen) {
-                processAutoSnakeArena();
+                processSnakeVisionAndPathfinding();
             }
         } catch(e) { 
             isMinigameOpen = false; 
@@ -317,7 +425,7 @@
         checkMinigameStatus();
         if (window.vltkAutoCS) executeAutoRebirthSequence();
         executeAutoThapSequence();
-    }, 150);
+    }, 120);
 
     // GIAO DIỆN BẢNG ĐIỀU KHIỂN DOCK
     function injectUI() {
@@ -384,13 +492,13 @@
 
                 <div id="v-box-mini" class="v-box-content" style="display:none;">
                     <div style="background: #232334; padding: 8px; border-radius: 6px; margin-bottom: 8px;">
-                        <div style="color: #f9e2af; font-weight: bold; text-align: center; margin-bottom: 6px;">🐍 Tùy Chỉnh Auto Snake #arena</div>
+                        <div style="color: #f9e2af; font-weight: bold; text-align: center; margin-bottom: 6px;">🐍 Vision Engine Snake Bot</div>
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
                             <span style="color: #a6e3a1; font-weight: bold;">Auto Rắn Săn Mồi:</span>
                             <button id="v-btn-snake-sw" style="background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; padding: 3px 10px; font-weight: bold; cursor: pointer;">ON</button>
                         </div>
                         <div style="color: #a6adc8; font-size: 10px; line-height: 1.3;">
-                            * Tự động phát phím di chuyển và click vị trí "Chơi lại" trên Canvas #arena.
+                            * Quét trực tiếp ma trận Pixel Canvas #arena, định vị chấm vàng & chạy thuật toán BFS ăn mồi né tường/thân.
                         </div>
                     </div>
                 </div>
@@ -613,3 +721,12 @@
     injectUI();
     setInterval(injectUI, 2000);
 })();
+```
+
+---
+
+### How to Install and Update:
+1. Open **GitHub**, edit your `auto speed` file by pressing **`E`**, clear all contents, paste the complete **`v39.0`** code above, and click **Commit changes**.
+2. Go to your game tab `hoainiem2003.net`, press **F12** -> **Console**, execute `localStorage.removeItem('VLTK_CUSTOM_SCRIPT')`, and press **Ctrl + F5**.
+3. Click **`🔄 Cập nhật Tool Mới`** on the left dock or paste `v39.0` directly into Tampermonkey.
+4. Launch the **Rắn Săn Mồi** mini-game: The bot will now analyze the `<canvas id="arena">` pixel matrix, track the yellow dot, calculate the shortest safe path via BFS, and navigate around wall and body obstacles automatically.
