@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         VLTK Idle - Auto Snake Game Fix v35.2
+// @name         VLTK Idle - Auto Snake Canvas #arena v36.0
 // @namespace    http://tampermonkey.net/
-// @version      35.2
-// @description  Tối ưu can thiệp Canvas & Tự động chạy Rắn Săn Mồi
+// @version      36.0
+// @description  Tối ưu riêng cho Canvas #arena - Click tọa độ Chơi lại & Điều khiển phím
 // @match        *://hoainiem2003.net/*
 // @allFrames    true
 // @grant        none
@@ -61,56 +61,52 @@
         return found;
     }
 
-    // 🐍 HÀM ĐIỀU KHIỂN VÀ CAN THIỆP RẮN SĂN MỒI
+    // 🐍 XỬ LÝ RIÊNG CHO CANVAS #ARENA
     let snakeDirIndex = 0;
-    const keyCodes = [39, 40, 37, 38]; // Phải, Xuống, Trái, Lên
-    const keyNames = ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'];
+    const snakeKeys = [
+        { name: 'ArrowRight', code: 39 },
+        { name: 'ArrowDown', code: 40 },
+        { name: 'ArrowLeft', code: 37 },
+        { name: 'ArrowUp', code: 38 }
+    ];
 
-    function processAutoSnakeGame() {
+    function processCanvasArenaSnake() {
         if (!window.vltkAutoSnake) return;
 
-        try {
-            // 1. Tự động click nút "Chơi lại" hoặc nút "Chơi" nếu đang ở màn hình kết thúc
-            clickByText('Chơi lại');
-            clickByText('Chơi');
+        const cv = document.getElementById('arena');
+        if (!cv) return;
 
-            // 2. Can thiệp trực tiếp vào Engine game để di chuyển Rắn
-            if (typeof Mi !== 'undefined' && Mi.snake) {
-                if (typeof Mi.snake.changeDir === 'function') {
-                    Mi.snake.changeDir(snakeDirIndex % 4);
-                } else if (typeof Mi.snake.setDir === 'function') {
-                    Mi.snake.setDir(snakeDirIndex % 4);
-                } else {
-                    Mi.snake.dir = snakeDirIndex % 4;
-                }
-                snakeDirIndex++;
-                return;
+        try {
+            // 1. Tự động click vào vị trí nút "Chơi lại" trên Canvas
+            const rect = cv.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+                const clickX = rect.left + rect.width * 0.38; // Vị trí nút Chơi lại
+                const clickY = rect.top + rect.height * 0.63;
+
+                ['mousedown', 'mouseup', 'click'].forEach(evtType => {
+                    const mEvt = new MouseEvent(evtType, {
+                        clientX: clickX,
+                        clientY: clickY,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    cv.dispatchEvent(mEvt);
+                });
             }
 
-            // 3. Gửi phím giả lập tần số cao vào Canvas và Window
-            const dirIdx = snakeDirIndex % 4;
-            const kCode = keyCodes[dirIdx];
-            const kName = keyNames[dirIdx];
-
-            const eventInit = {
-                key: kName,
-                code: kName,
-                keyCode: kCode,
-                which: kCode,
-                bubbles: true,
-                cancelable: true
-            };
-
-            const kEventDown = new KeyboardEvent('keydown', eventInit);
-            const kEventUp = new KeyboardEvent('keyup', eventInit);
-
-            window.dispatchEvent(kEventDown);
-            document.dispatchEvent(kEventDown);
-
-            const canvases = document.querySelectorAll('canvas');
-            canvases.forEach(cv => {
-                cv.dispatchEvent(kEventDown);
-                cv.dispatchEvent(kEventUp);
+            // 2. Gửi sự kiện phím trực tiếp vào Canvas arena
+            const k = snakeKeys[snakeDirIndex % 4];
+            ['keydown', 'keyup'].forEach(type => {
+                const kEvt = new KeyboardEvent(type, {
+                    key: k.name,
+                    code: k.name,
+                    keyCode: k.code,
+                    which: k.code,
+                    bubbles: true,
+                    cancelable: true
+                });
+                cv.dispatchEvent(kEvt);
+                window.dispatchEvent(kEvt);
             });
 
             snakeDirIndex++;
@@ -138,31 +134,14 @@
             });
     }
 
-    // KIỂM TRA MẮT THẤY RẮN SĂN MỒI
+    // KIỂM TRA SỰ XUẤT HIỆN CỦA CANVAS #ARENA
     function checkMinigameStatus() {
         try {
-            const gameKeywords = ['Rắn săn mồi', 'Giải trí', 'Trò chơi', 'Mini Game', 'Kết thúc!'];
-            const allElements = document.querySelectorAll('div, span, iframe, section, canvas');
-            let detected = false;
-
-            for (let el of allElements) {
-                if (el.offsetWidth > 0 && el.offsetHeight > 0) {
-                    const txt = el.innerText ? el.innerText.trim() : '';
-                    if (gameKeywords.some(kw => txt.includes(kw)) && (el.style.display !== 'none' && el.style.visibility !== 'hidden')) {
-                        detected = true;
-                        break;
-                    }
-                }
-            }
-
-            if (typeof Mi !== 'undefined' && (Mi.inMinigame || Mi.isMinigameOpen || Mi.snakeGame || Mi.snake)) {
-                detected = true;
-            }
-
-            isMinigameOpen = detected;
+            const arenaCanvas = document.getElementById('arena');
+            isMinigameOpen = !!(arenaCanvas && arenaCanvas.offsetWidth > 0);
 
             if (isMinigameOpen) {
-                processAutoSnakeGame();
+                processCanvasArenaSnake();
             }
         } catch(e) { 
             isMinigameOpen = false; 
@@ -331,14 +310,13 @@
         });
     };
 
-    // VÒNG LẶP KIỂM TRA TỐC ĐỘ CAO CHO RẮN SĂN MỒI
     setInterval(() => {
         checkMinigameStatus();
         if (window.vltkAutoCS) executeAutoRebirthSequence();
         executeAutoThapSequence();
     }, 150);
 
-    // GIAO DIỆN BẢNG ĐIỀU KHIỂN DOCK
+    // GIAO DIỆN DOCK
     function injectUI() {
         if (document.getElementById('vltk-dock-container')) return;
         const targetBody = document.body || document.documentElement;
@@ -403,13 +381,13 @@
 
                 <div id="v-box-mini" class="v-box-content" style="display:none;">
                     <div style="background: #232334; padding: 8px; border-radius: 6px; margin-bottom: 8px;">
-                        <div style="color: #f9e2af; font-weight: bold; text-align: center; margin-bottom: 6px;">🐍 Tùy Chỉnh Mini Game</div>
+                        <div style="color: #f9e2af; font-weight: bold; text-align: center; margin-bottom: 6px;">🐍 Tùy Chỉnh Mini Game Canvas</div>
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
                             <span style="color: #a6e3a1; font-weight: bold;">Auto Rắn Săn Mồi:</span>
                             <button id="v-btn-snake-sw" style="background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; padding: 3px 10px; font-weight: bold; cursor: pointer;">ON</button>
                         </div>
                         <div style="color: #a6adc8; font-size: 10px; line-height: 1.3;">
-                            * Tự động bấm "Chơi lại" và xoay hướng di chuyển rắn liên tục.
+                            * Tự động gửi phím vào Canvas #arena và click vị trí "Chơi lại".
                         </div>
                     </div>
                 </div>
