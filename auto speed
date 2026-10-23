@@ -117,13 +117,35 @@
                (d1 === 1 && d2 === 3) || (d1 === 3 && d2 === 1);
     }
 
+    // ĐẾM SỐ Ô TRỐNG KHẢ DỤNG (SURVIVAL SPACE SEARCH)
+    function countFreeSpace(grid, startX, startY, rows, cols) {
+        let count = 0;
+        const q = [[startX, startY]];
+        const visited = Array.from({ length: rows }, () => Array(cols).fill(false));
+        visited[startY][startX] = true;
+
+        while (q.length > 0) {
+            const [cx, cy] = q.shift();
+            count++;
+            for (let d = 0; d < 4; d++) {
+                const nx = cx + dirKeys[d].dx;
+                const ny = cy + dirKeys[d].dy;
+                if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && !visited[ny][nx] && grid[ny][nx] === 0) {
+                    visited[ny][nx] = true;
+                    q.push([nx, ny]);
+                }
+            }
+        }
+        return count;
+    }
+
     function processSnakeVisionAndPathfinding() {
         if (!window.vltkAutoSnake) return;
 
         const cv = document.getElementById('arena');
         if (!cv || cv.offsetWidth === 0) return;
 
-        // 1. Luôn tự nhấp Chơi lại khi màn chơi dừng
+        // 1. Tự nhấp Chơi lại khi màn chơi dừng
         autoRestartCanvas(cv);
 
         const ctx = cv.getContext('2d');
@@ -146,7 +168,7 @@
             const imgData = ctx.getImageData(0, 0, w, h);
             const pixels = imgData.data;
 
-            // 2. Quét Ma trận Pixel phát hiện vị trí chính xác
+            // 2. Quét Ma trận Pixel phát hiện vị trí chính xác với dải màu mở rộng
             for (let r = 0; r < rows; r++) {
                 for (let c = 0; c < cols; c++) {
                     const cx = Math.floor(c * cellW + cellW / 2);
@@ -157,17 +179,17 @@
                     const green = pixels[idx + 1];
                     const blue = pixels[idx + 2];
 
-                    // Phát hiện chấm mồi màu vàng/cam
-                    if (red > 200 && green > 130 && blue < 90) {
+                    // Phát hiện chấm mồi màu vàng/cam (Dải rộng linh hoạt)
+                    if (red > 180 && green > 100 && blue < 120 && !(green > 160 && red < 150)) {
                         food = { x: c, y: r };
                     }
-                    // Phát hiện đầu rắn tươi sáng
-                    else if (green > 170 && red < 160 && blue < 150) {
+                    // Phát hiện đầu rắn (Màu xanh lá sáng)
+                    else if (green > 160 && red < 160) {
                         if (!head) head = { x: c, y: r };
                         grid[r][c] = 1;
                     }
                     // Phát hiện thân rắn
-                    else if (green > 90 && red < 150 && blue < 130) {
+                    else if (green > 80 && red < 150 && blue < 130) {
                         grid[r][c] = 1;
                     }
                 }
@@ -192,7 +214,6 @@
                     }
 
                     for (let d = 0; d < 4; d++) {
-                        // Chống quay ngược 180 độ tuyệt đối
                         const firstStep = path.length > 0 ? path[0] : d;
                         if (isOpposite(firstStep, lastExecutedDir)) continue;
 
@@ -207,8 +228,9 @@
                 }
             }
 
-            // 4. Nếu BFS không có đường tới mồi, tìm đường an toàn không va tường/đuôi
+            // 4. Nếu BFS không có đường tới mồi, tìm đường an toàn có VÙNG SỐNG TỐT NHẤT
             if (nextMoveDir === -1) {
+                let maxSpace = -1;
                 for (let d = 0; d < 4; d++) {
                     if (isOpposite(d, lastExecutedDir)) continue;
 
@@ -216,18 +238,20 @@
                     const ny = head.y + dirKeys[d].dy;
 
                     if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && grid[ny][nx] === 0) {
-                        nextMoveDir = d;
-                        break;
+                        const freeSpace = countFreeSpace(grid, nx, ny, rows, cols);
+                        if (freeSpace > maxSpace) {
+                            maxSpace = freeSpace;
+                            nextMoveDir = d;
+                        }
                     }
                 }
             }
 
-            // 5. CẢNH BÁO BẢO VỆ TƯỜNG KHẨN CẤP (EMERGENCY WALL/TAIL DODGE)
+            // 5. CẢNH BÁO NÉ TƯỜNG KHẨN CẤP (EMERGENCY WALL DODGE)
             if (nextMoveDir !== -1) {
                 const testX = head.x + dirKeys[nextMoveDir].dx;
                 const testY = head.y + dirKeys[nextMoveDir].dy;
 
-                // Nếu hướng tính toán bị chạm tường hoặc va đuôi, chọn ngay 1 hướng an toàn còn lại
                 if (testX < 0 || testX >= cols || testY < 0 || testY >= rows || grid[testY][testX] === 1) {
                     for (let safeD = 0; safeD < 4; safeD++) {
                         if (isOpposite(safeD, lastExecutedDir)) continue;
