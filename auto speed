@@ -65,6 +65,7 @@
     // 🐍 ENGINE THỊ GIÁC CANVAS & THUẬT TOÁN BFS DỰA TRÊN MA TRẬN PIXEL
     // =========================================================================
     let currentDir = 0; // 0: Right, 1: Down, 2: Left, 3: Up
+    let lastExecutedDir = 0; // Luôn lưu hướng thực tế bước trước để chống quay 180 độ
     const dirKeys = [
         { name: 'ArrowRight', code: 39, dx: 1, dy: 0 },
         { name: 'ArrowDown', code: 40, dx: 0, dy: 1 },
@@ -110,6 +111,12 @@
         }
     }
 
+    // KIỂM TRA HƯỚNG CÓ NẠP VÀO 180 ĐỘ SO VỚI BƯỚC VỪA ĐI HAY KHÔNG
+    function isOpposite(d1, d2) {
+        return (d1 === 0 && d2 === 2) || (d1 === 2 && d2 === 0) ||
+               (d1 === 1 && d2 === 3) || (d1 === 3 && d2 === 1);
+    }
+
     function processSnakeVisionAndPathfinding() {
         if (!window.vltkAutoSnake) return;
 
@@ -125,7 +132,7 @@
         const w = cv.width || 480;
         const h = cv.height || 480;
 
-        // Giả định lưới bàn cờ tiêu chuẩn 15x15 hoặc 20x20
+        // Bàn cờ tiêu chuẩn 15x15
         const cols = 15;
         const rows = 15;
         const cellW = w / cols;
@@ -133,13 +140,13 @@
 
         let head = null;
         let food = null;
-        const grid = Array.from({ length: rows }, () => Array(cols).fill(0)); // 0: Trống, 1: Thân rắn
+        const grid = Array.from({ length: rows }, () => Array(cols).fill(0));
 
         try {
             const imgData = ctx.getImageData(0, 0, w, h);
             const pixels = imgData.data;
 
-            // 2. Quét ma trận Pixel để định vị Đầu rắn, Thân rắn & Mồi vàng
+            // 2. Quét Ma trận Pixel phát hiện vị trí chính xác
             for (let r = 0; r < rows; r++) {
                 for (let c = 0; c < cols; c++) {
                     const cx = Math.floor(c * cellW + cellW / 2);
@@ -150,17 +157,17 @@
                     const green = pixels[idx + 1];
                     const blue = pixels[idx + 2];
 
-                    // Phát hiện hạt mồi tròn vàng/cam
-                    if (red > 200 && green > 140 && blue < 80) {
+                    // Phát hiện chấm mồi màu vàng/cam
+                    if (red > 200 && green > 130 && blue < 90) {
                         food = { x: c, y: r };
                     }
-                    // Phát hiện đầu rắn (Màu xanh lá tươi sáng + mắt)
-                    else if (green > 180 && red < 160 && blue < 150) {
+                    // Phát hiện đầu rắn tươi sáng
+                    else if (green > 170 && red < 160 && blue < 150) {
                         if (!head) head = { x: c, y: r };
-                        grid[r][c] = 1; // Đánh dấu ô chứa rắn
+                        grid[r][c] = 1;
                     }
-                    // Phát hiện thân rắn (Màu xanh lá đậm)
-                    else if (green > 100 && red < 140 && blue < 120) {
+                    // Phát hiện thân rắn
+                    else if (green > 90 && red < 150 && blue < 130) {
                         grid[r][c] = 1;
                     }
                 }
@@ -168,7 +175,7 @@
 
             if (!head) return;
 
-            // 3. Thuật toán BFS tìm đường ngắn nhất tới mồi vàng
+            // 3. Thuật toán BFS Tìm đường ngắn nhất tới mồi
             let nextMoveDir = -1;
 
             if (food) {
@@ -185,9 +192,9 @@
                     }
 
                     for (let d = 0; d < 4; d++) {
-                        // Không quay ngược 180 độ
-                        if ((d === 0 && currentDir === 2) || (d === 2 && currentDir === 0) ||
-                            (d === 1 && currentDir === 3) || (d === 3 && currentDir === 1)) continue;
+                        // Chống quay ngược 180 độ tuyệt đối
+                        const firstStep = path.length > 0 ? path[0] : d;
+                        if (isOpposite(firstStep, lastExecutedDir)) continue;
 
                         const nx = cx + dirKeys[d].dx;
                         const ny = cy + dirKeys[d].dy;
@@ -200,11 +207,10 @@
                 }
             }
 
-            // 4. Nếu BFS bị bế tắc, tìm ô trống safe lân cận để né tường & thân
+            // 4. Nếu BFS không có đường tới mồi, tìm đường an toàn không va tường/đuôi
             if (nextMoveDir === -1) {
                 for (let d = 0; d < 4; d++) {
-                    if ((d === 0 && currentDir === 2) || (d === 2 && currentDir === 0) ||
-                        (d === 1 && currentDir === 3) || (d === 3 && currentDir === 1)) continue;
+                    if (isOpposite(d, lastExecutedDir)) continue;
 
                     const nx = head.x + dirKeys[d].dx;
                     const ny = head.y + dirKeys[d].dy;
@@ -216,9 +222,29 @@
                 }
             }
 
-            // 5. Thực thi phím di chuyển chuẩn
+            // 5. CẢNH BÁO BẢO VỆ TƯỜNG KHẨN CẤP (EMERGENCY WALL/TAIL DODGE)
             if (nextMoveDir !== -1) {
+                const testX = head.x + dirKeys[nextMoveDir].dx;
+                const testY = head.y + dirKeys[nextMoveDir].dy;
+
+                // Nếu hướng tính toán bị chạm tường hoặc va đuôi, chọn ngay 1 hướng an toàn còn lại
+                if (testX < 0 || testX >= cols || testY < 0 || testY >= rows || grid[testY][testX] === 1) {
+                    for (let safeD = 0; safeD < 4; safeD++) {
+                        if (isOpposite(safeD, lastExecutedDir)) continue;
+                        const sx = head.x + dirKeys[safeD].dx;
+                        const sy = head.y + dirKeys[safeD].dy;
+                        if (sx >= 0 && sx < cols && sy >= 0 && sy < rows && grid[sy][sx] === 0) {
+                            nextMoveDir = safeD;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 6. Thực thi di chuyển
+            if (nextMoveDir !== -1 && !isOpposite(nextMoveDir, lastExecutedDir)) {
                 currentDir = nextMoveDir;
+                lastExecutedDir = nextMoveDir;
                 sendKeyToTarget(cv, dirKeys[nextMoveDir]);
             }
         } catch(e) {}
