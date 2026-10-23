@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         VLTK Idle - Real-Time Canvas Vision Snake Bot v39.0
+// @name         VLTK Idle - Real-Time Canvas Vision Snake Bot v40.1
 // @namespace    http://tampermonkey.net/
-// @version      39.0
+// @version      40.1
 // @description  Tự động quét Pixel Canvas #arena, định vị chấm vàng & chạy thuật toán BFS ăn mồi không đâm đuôi/tường
 // @match        *://hoainiem2003.net/*
 // @allFrames    true
@@ -35,14 +35,18 @@
         if (!el) return false;
         const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
         events.forEach(evt => {
-            const e = new MouseEvent(evt, {
-                view: window,
-                bubbles: true,
-                cancelable: true
-            });
-            el.dispatchEvent(e);
+            try {
+                const e = new MouseEvent(evt, {
+                    view: window,
+                    bubbles: true,
+                    cancelable: true
+                });
+                el.dispatchEvent(e);
+            } catch(err) {}
         });
-        if (typeof el.click === 'function') el.click();
+        if (typeof el.click === 'function') {
+            try { el.click(); } catch(err) {}
+        }
         return true;
     }
 
@@ -64,7 +68,6 @@
     // =========================================================================
     // 🐍 ENGINE THỊ GIÁC CANVAS & THUẬT TOÁN BFS DỰA TRÊN MA TRẬN PIXEL
     // =========================================================================
-    let currentDir = 0; // 0: Right, 1: Down, 2: Left, 3: Up
     let lastExecutedDir = 0; // Luôn lưu hướng thực tế bước trước để chống quay 180 độ
     const dirKeys = [
         { name: 'ArrowRight', code: 39, dx: 1, dy: 0 },
@@ -100,13 +103,15 @@
             const clickY = rect.top + rect.height * 0.63;
 
             ['mousedown', 'mouseup', 'click'].forEach(evtName => {
-                const mEvt = new MouseEvent(evtName, {
-                    clientX: clickX,
-                    clientY: clickY,
-                    bubbles: true,
-                    cancelable: true
-                });
-                cv.dispatchEvent(mEvt);
+                try {
+                    const mEvt = new MouseEvent(evtName, {
+                        clientX: clickX,
+                        clientY: clickY,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    cv.dispatchEvent(mEvt);
+                } catch(err) {}
             });
         }
     }
@@ -267,7 +272,6 @@
 
             // 6. Thực thi di chuyển
             if (nextMoveDir !== -1 && !isOpposite(nextMoveDir, lastExecutedDir)) {
-                currentDir = nextMoveDir;
                 lastExecutedDir = nextMoveDir;
                 sendKeyToTarget(cv, dirKeys[nextMoveDir]);
             }
@@ -276,12 +280,23 @@
 
     // CẬP NHẬT CODE MỚI TỪ LINK RAW
     function performAutoUpdate(btnUpdate) {
+        if (!btnUpdate) return;
         btnUpdate.innerText = '⏳ Đang tải...';
         btnUpdate.style.background = '#fab387';
 
         fetch(REMOTE_CODE_URL + '?t=' + new Date().getTime())
             .then(res => res.text())
             .then(code => {
+                // Kiểm tra cú pháp hợp lệ trước khi lưu
+                try {
+                    new Function(code);
+                } catch(syntaxErr) {
+                    btnUpdate.innerText = '🔄 Cập nhật Tool';
+                    btnUpdate.style.background = '#89b4fa';
+                    alert('Lỗi: File code tải về từ GitHub có chứa lỗi cú pháp JavaScript!\nVui lòng kiểm tra lại file trên GitHub.');
+                    return;
+                }
+
                 localStorage.setItem('VLTK_CUSTOM_SCRIPT', code);
                 btnUpdate.innerText = '✅ Thành công!';
                 btnUpdate.style.background = '#a6e3a1';
@@ -289,9 +304,11 @@
                 location.reload();
             })
             .catch(() => {
-                alert('Lỗi kết nối tải bản cập nhật!');
-                btnUpdate.innerText = '🔄 Cập nhật Tool';
-                btnUpdate.style.background = '#89b4fa';
+                alert('Lỗi kết nối tải bản cập nhật từ GitHub!');
+                if (btnUpdate) {
+                    btnUpdate.innerText = '🔄 Cập nhật Tool';
+                    btnUpdate.style.background = '#89b4fa';
+                }
             });
     }
 
@@ -771,12 +788,3 @@
     injectUI();
     setInterval(injectUI, 2000);
 })();
-```
-
----
-
-### How to Install and Update:
-1. Open **GitHub**, edit your `auto speed` file by pressing **`E`**, clear all contents, paste the complete **`v39.0`** code above, and click **Commit changes**.
-2. Go to your game tab `hoainiem2003.net`, press **F12** -> **Console**, execute `localStorage.removeItem('VLTK_CUSTOM_SCRIPT')`, and press **Ctrl + F5**.
-3. Click **`🔄 Cập nhật Tool Mới`** on the left dock or paste `v39.0` directly into Tampermonkey.
-4. Launch the **Rắn Săn Mồi** mini-game: The bot will now analyze the `<canvas id="arena">` pixel matrix, track the yellow dot, calculate the shortest safe path via BFS, and navigate around wall and body obstacles automatically.
