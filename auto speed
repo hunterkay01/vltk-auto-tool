@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         VLTK Idle - Full Dock Features & Canvas Snake v40.2
-// @namespace    http://tampermonkey.net/
+// @namespace    [http://tampermonkey.net/](http://tampermonkey.net/)
 // @version      40.2
 // @description  Khôi phục đầy đủ Hack Speed, Event, Auto Tháp/CS & Bot Rắn Săn Mồi Canvas #arena
 // @match        *://hoainiem2003.net/*
@@ -12,7 +12,7 @@
 (function() {
     'use strict';
 
-    const REMOTE_CODE_URL = 'https://raw.githubusercontent.com/hunterkay01/vltk-auto-tool/main/auto%20speed';
+    const REMOTE_CODE_URL = '[https://raw.githubusercontent.com/hunterkay01/vltk-auto-tool/main/auto%20speed](https://raw.githubusercontent.com/hunterkay01/vltk-auto-tool/main/auto%20speed)';
 
     window.vltkSpeedEnabled = true;
     window.vltkSelectedSpeed = 1;
@@ -140,7 +140,7 @@
         } catch(e) {}
     }
 
-    // 🔄 HÀM CẬP NHẬT CODE AN TOÀN
+    // 🔄 HÀM CẬP NHẬT CODE AN TOÀN CHỐNG LỖI CÚ PHÁP
     function performAutoUpdate(btnUpdate) {
         btnUpdate.innerText = '⏳ Đang tải...';
         btnUpdate.style.background = '#fab387';
@@ -157,7 +157,7 @@
                     alert('Cập nhật bản mới thành công! Trang web sẽ tự động tải lại.');
                     location.reload();
                 } catch(err) {
-                    alert('Lỗi: Code mới có lỗi cú pháp!');
+                    alert('Lỗi: File tải về từ GitHub có chứa lỗi cú pháp JavaScript!');
                     btnUpdate.innerText = '🔄 Cập nhật Tool';
                     btnUpdate.style.background = '#89b4fa';
                 }
@@ -384,7 +384,6 @@
                     <button id="v-popup-close" style="background:#f38ba8; color:#11111b; border:none; border-radius:4px; width:20px; height:20px; cursor:pointer; font-weight:bold;">✖</button>
                 </div>
 
-                <!-- BOX 1: SPEED -->
                 <div id="v-box-speed" class="v-box-content" style="display:none;">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                         <span style="color: #a6adc8; font-weight: bold;">⚡ Hack Speed:</span>
@@ -403,7 +402,6 @@
                     </div>
                 </div>
 
-                <!-- BOX 2: AUTO ĐỔI EVENT -->
                 <div id="v-box-event" class="v-box-content" style="display:none;">
                     <select id="v-sel-event" style="width: 100%; background: #11111b; color: #a6e3a1; border: 1px solid #45475a; border-radius: 3px; padding: 5px; font-size: 11px; margin-bottom: 8px; outline: none;">
                         <option value="">-- Mở tab Event rồi bấm Quét --</option>
@@ -415,7 +413,6 @@
                     </div>
                 </div>
 
-                <!-- BOX 3: TAB MINI GAME (🎮) -->
                 <div id="v-box-mini" class="v-box-content" style="display:none;">
                     <div style="background: #232334; padding: 8px; border-radius: 6px; margin-bottom: 8px;">
                         <div style="color: #f9e2af; font-weight: bold; text-align: center; margin-bottom: 6px;">🐍 Tùy Chỉnh Auto Snake #arena</div>
@@ -429,7 +426,6 @@
                     </div>
                 </div>
 
-                <!-- BOX 4: AUTO TỰ ĐỘNG -->
                 <div id="v-box-auto" class="v-box-content" style="display:none;">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
                         <span style="color: #a6adc8; font-weight: bold;">🧲 Auto Nhặt Từ Xa:</span>
