@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         VLTK Idle - Real-Time Canvas Vision Snake Bot v40.1
-// @namespace    http://tampermonkey.net/
+// @name         VLTK Idle - Auto Snake Pixel Bot v40.1
+// @namespace    [http://tampermonkey.net/](http://tampermonkey.net/)
 // @version      40.1
-// @description  Tự động quét Pixel Canvas #arena, định vị chấm vàng & chạy thuật toán BFS ăn mồi không đâm đuôi/tường
+// @description  Sửa lỗi cú pháp Update - Quét pixel Canvas #arena tự ăn mồi & né tường
 // @match        *://hoainiem2003.net/*
 // @allFrames    true
 // @grant        none
@@ -12,454 +12,175 @@
 (function() {
     'use strict';
 
-    const REMOTE_CODE_URL = 'https://raw.githubusercontent.com/hunterkay01/vltk-auto-tool/main/auto%20speed';
+    const REMOTE_CODE_URL = '[https://raw.githubusercontent.com/hunterkay01/vltk-auto-tool/main/auto%20speed](https://raw.githubusercontent.com/hunterkay01/vltk-auto-tool/main/auto%20speed)';
 
     window.vltkSpeedEnabled = true;
     window.vltkSelectedSpeed = 1;
-    window.vltkSpeed = 1;
-    
     window.vltkAutoCS = true;
     window.vltkAutoRemotePick = true;
-
     window.vltkAutoThap1 = false;
     window.vltkAutoThap2 = false;
     window.vltkDodgeSkill = false;
-    window.vltkAutoSnake = true; // Auto Rắn săn mồi qua Vision Engine
+    window.vltkAutoSnake = true;
 
     let isCsProcessing = false;
     let dodgeAngle = 0;
     let isMinigameOpen = false;
-    let autoEventInterval = null;
+    let lastDir = 'RIGHT';
 
     function triggerFullClick(el) {
         if (!el) return false;
         const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
         events.forEach(evt => {
             try {
-                const e = new MouseEvent(evt, {
-                    view: window,
-                    bubbles: true,
-                    cancelable: true
-                });
+                const e = new MouseEvent(evt, { view: window, bubbles: true, cancelable: true });
                 el.dispatchEvent(e);
             } catch(err) {}
         });
-        if (typeof el.click === 'function') {
-            try { el.click(); } catch(err) {}
-        }
+        if (typeof el.click === 'function') el.click();
         return true;
     }
 
-    function clickByText(text, exact = false) {
+    function clickByText(text) {
         const allNodes = document.querySelectorAll('button, div, span, a, p, td');
-        let found = false;
         for (let el of allNodes) {
-            if (el.innerText) {
-                const inner = el.innerText.trim();
-                if (exact ? inner === text : inner.includes(text)) {
-                    triggerFullClick(el);
-                    found = true;
-                }
+            if (el.innerText && el.innerText.trim() === text) {
+                triggerFullClick(el);
+                return true;
             }
         }
-        return found;
+        return false;
     }
 
-    // =========================================================================
-    // 🐍 ENGINE THỊ GIÁC CANVAS & THUẬT TOÁN BFS DỰA TRÊN MA TRẬN PIXEL
-    // =========================================================================
-    let lastExecutedDir = 0; // Luôn lưu hướng thực tế bước trước để chống quay 180 độ
-    const dirKeys = [
-        { name: 'ArrowRight', code: 39, dx: 1, dy: 0 },
-        { name: 'ArrowDown', code: 40, dx: 0, dy: 1 },
-        { name: 'ArrowLeft', code: 37, dx: -1, dy: 0 },
-        { name: 'ArrowUp', code: 38, dx: 0, dy: -1 }
-    ];
-
-    function sendKeyToTarget(cv, keyObj) {
-        try {
-            cv.focus();
-            ['keydown', 'keyup'].forEach(evtType => {
-                const kEvt = new KeyboardEvent(evtType, {
-                    key: keyObj.name,
-                    code: keyObj.name,
-                    keyCode: keyObj.code,
-                    which: keyObj.code,
-                    bubbles: true,
-                    cancelable: true,
-                    composed: true
-                });
-                cv.dispatchEvent(kEvt);
-                window.dispatchEvent(kEvt);
-                document.dispatchEvent(kEvt);
-            });
-        } catch(e) {}
-    }
-
-    function autoRestartCanvas(cv) {
-        const rect = cv.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) {
-            const clickX = rect.left + rect.width * 0.38;
-            const clickY = rect.top + rect.height * 0.63;
-
-            ['mousedown', 'mouseup', 'click'].forEach(evtName => {
-                try {
-                    const mEvt = new MouseEvent(evtName, {
-                        clientX: clickX,
-                        clientY: clickY,
-                        bubbles: true,
-                        cancelable: true
-                    });
-                    cv.dispatchEvent(mEvt);
-                } catch(err) {}
-            });
-        }
-    }
-
-    // KIỂM TRA HƯỚNG CÓ NẠP VÀO 180 ĐỘ SO VỚI BƯỚC VỪA ĐI HAY KHÔNG
-    function isOpposite(d1, d2) {
-        return (d1 === 0 && d2 === 2) || (d1 === 2 && d2 === 0) ||
-               (d1 === 1 && d2 === 3) || (d1 === 3 && d2 === 1);
-    }
-
-    // ĐẾM SỐ Ô TRỐNG KHẢ DỤNG (SURVIVAL SPACE SEARCH)
-    function countFreeSpace(grid, startX, startY, rows, cols) {
-        let count = 0;
-        const q = [[startX, startY]];
-        const visited = Array.from({ length: rows }, () => Array(cols).fill(false));
-        visited[startY][startX] = true;
-
-        while (q.length > 0) {
-            const [cx, cy] = q.shift();
-            count++;
-            for (let d = 0; d < 4; d++) {
-                const nx = cx + dirKeys[d].dx;
-                const ny = cy + dirKeys[d].dy;
-                if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && !visited[ny][nx] && grid[ny][nx] === 0) {
-                    visited[ny][nx] = true;
-                    q.push([nx, ny]);
-                }
-            }
-        }
-        return count;
-    }
-
-    function processSnakeVisionAndPathfinding() {
+    // 🐍 THUẬT TOÁN QUÉT PIXEL CANVAS #ARENA ĐỂ TÌM MỒI VÀ NÉ TƯỜNG
+    function processCanvasPixelSnake() {
         if (!window.vltkAutoSnake) return;
 
         const cv = document.getElementById('arena');
         if (!cv || cv.offsetWidth === 0) return;
 
-        // 1. Tự nhấp Chơi lại khi màn chơi dừng
-        autoRestartCanvas(cv);
-
-        const ctx = cv.getContext('2d');
-        if (!ctx) return;
-
-        const w = cv.width || 480;
-        const h = cv.height || 480;
-
-        // Bàn cờ tiêu chuẩn 15x15
-        const cols = 15;
-        const rows = 15;
-        const cellW = w / cols;
-        const cellH = h / rows;
-
-        let head = null;
-        let food = null;
-        const grid = Array.from({ length: rows }, () => Array(cols).fill(0));
-
         try {
-            const imgData = ctx.getImageData(0, 0, w, h);
-            const pixels = imgData.data;
+            const ctx = cv.getContext('2d');
+            const rect = cv.getBoundingClientRect();
 
-            // 2. Quét Ma trận Pixel phát hiện vị trí chính xác với dải màu mở rộng
+            // 1. Click tự động chơi lại khi kết thúc
+            const clickX = rect.left + rect.width * 0.38;
+            const clickY = rect.top + rect.height * 0.63;
+            const mEvt = new MouseEvent('click', { clientX: clickX, clientY: clickY, bubbles: true });
+            cv.dispatchEvent(mEvt);
+
+            if (!ctx) return;
+
+            // 2. Phân tích ma trận màu trên Canvas (15x15)
+            const cols = 15;
+            const rows = 15;
+            const cellW = cv.width / cols;
+            const cellH = cv.height / rows;
+
+            let head = null;
+            let food = null;
+
             for (let r = 0; r < rows; r++) {
                 for (let c = 0; c < cols; c++) {
                     const cx = Math.floor(c * cellW + cellW / 2);
                     const cy = Math.floor(r * cellH + cellH / 2);
-                    const idx = (cy * w + cx) * 4;
+                    const pixel = ctx.getImageData(cx, cy, 1, 1).data;
+                    const red = pixel[0], green = pixel[1], blue = pixel[2];
 
-                    const red = pixels[idx];
-                    const green = pixels[idx + 1];
-                    const blue = pixels[idx + 2];
-
-                    // Phát hiện chấm mồi màu vàng/cam (Dải rộng linh hoạt)
-                    if (red > 180 && green > 100 && blue < 120 && !(green > 160 && red < 150)) {
+                    // Nhận diện mồi tròn màu vàng/cam
+                    if (red > 180 && green > 100 && blue < 120) {
                         food = { x: c, y: r };
                     }
-                    // Phát hiện đầu rắn (Màu xanh lá sáng)
-                    else if (green > 160 && red < 160) {
-                        if (!head) head = { x: c, y: r };
-                        grid[r][c] = 1;
-                    }
-                    // Phát hiện thân rắn
-                    else if (green > 80 && red < 150 && blue < 130) {
-                        grid[r][c] = 1;
+                    // Nhận diện đầu rắn màu xanh lá tươi
+                    else if (green > 160 && red < 120 && blue < 120) {
+                        head = { x: c, y: r };
                     }
                 }
             }
 
-            if (!head) return;
+            // 3. Tính toán hướng đi an toàn nhất
+            let targetDir = lastDir;
 
-            // 3. Thuật toán BFS Tìm đường ngắn nhất tới mồi
-            let nextMoveDir = -1;
-
-            if (food) {
-                const queue = [[head.x, head.y, []]];
-                const visited = Array.from({ length: rows }, () => Array(cols).fill(false));
-                visited[head.y][head.x] = true;
-
-                while (queue.length > 0) {
-                    const [cx, cy, path] = queue.shift();
-
-                    if (cx === food.x && cy === food.y && path.length > 0) {
-                        nextMoveDir = path[0];
-                        break;
-                    }
-
-                    for (let d = 0; d < 4; d++) {
-                        const firstStep = path.length > 0 ? path[0] : d;
-                        if (isOpposite(firstStep, lastExecutedDir)) continue;
-
-                        const nx = cx + dirKeys[d].dx;
-                        const ny = cy + dirKeys[d].dy;
-
-                        if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && !visited[ny][nx] && grid[ny][nx] === 0) {
-                            visited[ny][nx] = true;
-                            queue.push([nx, ny, [...path, d]]);
-                        }
-                    }
-                }
+            if (head && food) {
+                if (head.x < food.x && lastDir !== 'LEFT') targetDir = 'RIGHT';
+                else if (head.x > food.x && lastDir !== 'RIGHT') targetDir = 'LEFT';
+                else if (head.y < food.y && lastDir !== 'UP') targetDir = 'DOWN';
+                else if (head.y > food.y && lastDir !== 'DOWN') targetDir = 'UP';
             }
 
-            // 4. Nếu BFS không có đường tới mồi, tìm đường an toàn có VÙNG SỐNG TỐT NHẤT
-            if (nextMoveDir === -1) {
-                let maxSpace = -1;
-                for (let d = 0; d < 4; d++) {
-                    if (isOpposite(d, lastExecutedDir)) continue;
-
-                    const nx = head.x + dirKeys[d].dx;
-                    const ny = head.y + dirKeys[d].dy;
-
-                    if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && grid[ny][nx] === 0) {
-                        const freeSpace = countFreeSpace(grid, nx, ny, rows, cols);
-                        if (freeSpace > maxSpace) {
-                            maxSpace = freeSpace;
-                            nextMoveDir = d;
-                        }
-                    }
-                }
+            // Khóa né đâm tường khẩn cấp
+            if (head) {
+                if (targetDir === 'RIGHT' && head.x >= cols - 1) targetDir = (head.y < rows - 1) ? 'DOWN' : 'UP';
+                if (targetDir === 'LEFT' && head.x <= 0) targetDir = (head.y < rows - 1) ? 'DOWN' : 'UP';
+                if (targetDir === 'DOWN' && head.y >= rows - 1) targetDir = (head.x < cols - 1) ? 'RIGHT' : 'LEFT';
+                if (targetDir === 'UP' && head.y <= 0) targetDir = (head.x < cols - 1) ? 'RIGHT' : 'LEFT';
             }
 
-            // 5. CẢNH BÁO NÉ TƯỜNG KHẨN CẤP (EMERGENCY WALL DODGE)
-            if (nextMoveDir !== -1) {
-                const testX = head.x + dirKeys[nextMoveDir].dx;
-                const testY = head.y + dirKeys[nextMoveDir].dy;
+            // 4. Bấm phím di chuyển
+            const keyMap = {
+                'RIGHT': { key: 'ArrowRight', code: 39 },
+                'DOWN': { key: 'ArrowDown', code: 40 },
+                'LEFT': { key: 'ArrowLeft', code: 37 },
+                'UP': { key: 'ArrowUp', code: 38 }
+            };
 
-                if (testX < 0 || testX >= cols || testY < 0 || testY >= rows || grid[testY][testX] === 1) {
-                    for (let safeD = 0; safeD < 4; safeD++) {
-                        if (isOpposite(safeD, lastExecutedDir)) continue;
-                        const sx = head.x + dirKeys[safeD].dx;
-                        const sy = head.y + dirKeys[safeD].dy;
-                        if (sx >= 0 && sx < cols && sy >= 0 && sy < rows && grid[sy][sx] === 0) {
-                            nextMoveDir = safeD;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // 6. Thực thi di chuyển
-            if (nextMoveDir !== -1 && !isOpposite(nextMoveDir, lastExecutedDir)) {
-                lastExecutedDir = nextMoveDir;
-                sendKeyToTarget(cv, dirKeys[nextMoveDir]);
+            const k = keyMap[targetDir];
+            if (k) {
+                lastDir = targetDir;
+                const kEvt = new KeyboardEvent('keydown', {
+                    key: k.key, code: k.key, keyCode: k.code, which: k.code, bubbles: true, cancelable: true
+                });
+                cv.dispatchEvent(kEvt);
+                window.dispatchEvent(kEvt);
             }
         } catch(e) {}
     }
 
-    // CẬP NHẬT CODE MỚI TỪ LINK RAW
+    // 🔄 CẬP NHẬT CODE AN TOÀN (BẢO VỆ CHỐNG LỖI CÚ PHÁP)
     function performAutoUpdate(btnUpdate) {
-        if (!btnUpdate) return;
         btnUpdate.innerText = '⏳ Đang tải...';
         btnUpdate.style.background = '#fab387';
 
         fetch(REMOTE_CODE_URL + '?t=' + new Date().getTime())
             .then(res => res.text())
             .then(code => {
-                // Kiểm tra cú pháp hợp lệ trước khi lưu
+                // Loại bỏ mã định dạng Markdown nếu lỡ dán trên GitHub
+                let cleanCode = code.replace(/```javascript/g, '').replace(/```/g, '').trim();
+                
                 try {
-                    new Function(code);
-                } catch(syntaxErr) {
+                    new Function(cleanCode); // Kiểm tra cú pháp trước khi lưu
+                    localStorage.setItem('VLTK_CUSTOM_SCRIPT', cleanCode);
+                    btnUpdate.innerText = '✅ Thành công!';
+                    btnUpdate.style.background = '#a6e3a1';
+                    alert('Cập nhật bản mới thành công! Trang web sẽ tự động tải lại.');
+                    location.reload();
+                } catch(err) {
+                    alert('Lỗi: File tải về từ GitHub có chứa lỗi cú pháp JavaScript!');
                     btnUpdate.innerText = '🔄 Cập nhật Tool';
                     btnUpdate.style.background = '#89b4fa';
-                    alert('Lỗi: File code tải về từ GitHub có chứa lỗi cú pháp JavaScript!\nVui lòng kiểm tra lại file trên GitHub.');
-                    return;
                 }
-
-                localStorage.setItem('VLTK_CUSTOM_SCRIPT', code);
-                btnUpdate.innerText = '✅ Thành công!';
-                btnUpdate.style.background = '#a6e3a1';
-                alert('Cập nhật bản mới thành công! Trang web sẽ tự động tải lại.');
-                location.reload();
             })
             .catch(() => {
-                alert('Lỗi kết nối tải bản cập nhật từ GitHub!');
-                if (btnUpdate) {
-                    btnUpdate.innerText = '🔄 Cập nhật Tool';
-                    btnUpdate.style.background = '#89b4fa';
-                }
+                alert('Không thể kết nối lấy bản cập nhật!');
+                btnUpdate.innerText = '🔄 Cập nhật Tool';
+                btnUpdate.style.background = '#89b4fa';
             });
     }
 
-    // KIỂM TRA TRẠNG THÁI CANVAS #ARENA
+    // KIỂM TRA MINI-GAME
     function checkMinigameStatus() {
         try {
-            const arenaCanvas = document.getElementById('arena');
-            isMinigameOpen = !!(arenaCanvas && arenaCanvas.offsetWidth > 0);
-
+            const cv = document.getElementById('arena');
+            isMinigameOpen = !!(cv && cv.offsetWidth > 0);
             if (isMinigameOpen) {
-                processSnakeVisionAndPathfinding();
+                processCanvasPixelSnake();
             }
-        } catch(e) { 
-            isMinigameOpen = false; 
+        } catch(e) {
+            isMinigameOpen = false;
         }
     }
 
-    // AUTO THÁP & NÉ SKILL
-    function executeAutoThapSequence() {
-        if (!window.vltkAutoThap1 && !window.vltkAutoThap2) return;
-        try {
-            if (typeof Mi !== 'undefined') {
-                const isDead = (Mi.P && (Mi.P.hp <= 0 || Mi.P.isDead));
-                const inThap = (Mi.mapName && Mi.mapName.includes('Tháp')) || (Mi.inThap === true);
-                if (isDead || !inThap) {
-                    clickByText('Hồi sinh');
-                    clickByText('Về thành');
-                    setTimeout(() => {
-                        clickByText('Tháp');
-                        clickByText('Võ Quán');
-                        setTimeout(() => {
-                            if (window.vltkAutoThap1) {
-                                if (Mi.socket && typeof Mi.socket.emit === 'function') Mi.socket.emit('goThap', { id: 1 });
-                                clickByText('Tháp 1');
-                            } else if (window.vltkAutoThap2) {
-                                if (Mi.socket && typeof Mi.socket.emit === 'function') Mi.socket.emit('goThap', { id: 2 });
-                                clickByText('Tháp 2');
-                            }
-                            clickByText('Thử thách');
-                            clickByText('Vào tháp');
-                        }, 300);
-                    }, 500);
-                }
-            }
-        } catch(e) {}
-    }
-
-    function executeDodgeAndAttack() {
-        try {
-            if (typeof Mi !== 'undefined' && Mi.P) {
-                if (typeof Mi.useSkill === 'function') Mi.useSkill();
-                if (window.vltkDodgeSkill) {
-                    dodgeAngle += 0.2;
-                    const radius = 120;
-                    let centerX = Mi.P.x || 400;
-                    let centerY = Mi.P.y || 300;
-                    if (Mi.monsters && Mi.monsters.length > 0 && Mi.monsters[0]) {
-                        centerX = Mi.monsters[0].x || centerX;
-                        centerY = Mi.monsters[0].y || centerY;
-                    }
-                    const targetX = centerX + Math.cos(dodgeAngle) * radius;
-                    const targetY = centerY + Math.sin(dodgeAngle) * radius;
-                    if (typeof Mi.moveTo === 'function') Mi.moveTo(targetX, targetY);
-                    else { Mi.P.x = targetX; Mi.P.y = targetY; }
-                }
-            }
-        } catch(e) {}
-    }
-
-    function executeAutoRebirthSequence() {
-        if (!window.vltkAutoCS || isCsProcessing) return;
-        try {
-            if (typeof Mi !== 'undefined') {
-                const hasCsButton = Array.from(document.querySelectorAll('button, div, span, a')).some(
-                    el => el.innerText && el.innerText.trim().includes('Chuyển sinh')
-                );
-                if (hasCsButton || (Mi.P && Mi.P.lv >= 140)) {
-                    isCsProcessing = true;
-                    if (Mi.socket && typeof Mi.socket.emit === 'function') Mi.socket.emit('cs');
-                    clickByText('Chuyển sinh');
-                    setTimeout(() => {
-                        clickByText('Chắc chắn');
-                        clickByText('Về cấp 1');
-                        setTimeout(() => { isCsProcessing = false; }, 500);
-                    }, 400);
-                }
-            }
-        } catch(e) { isCsProcessing = false; }
-    }
-
-    // AUTO ĐỔI EVENT
-    function getEventItemList() {
-        const items = [];
-        const allNodes = document.querySelectorAll('div, span, td, p, button, a');
-        allNodes.forEach(node => {
-            if (node.innerText && node.innerText.trim() === 'Đổi') {
-                let parent = node.parentElement;
-                for (let i = 0; i < 4 && parent; i++) {
-                    const txt = parent.innerText ? parent.innerText.replace(/\n/g, ' ').trim() : '';
-                    if (txt && txt.includes('Bánh Trung Thu') && txt.includes('Đổi')) {
-                        let cleanName = txt.split('Đổi')[0].split(/\d+\s*Bánh/)[0].trim();
-                        if (cleanName && cleanName.length < 30 && !items.some(it => it.text === cleanName)) {
-                            items.push({ text: cleanName, top: node.getBoundingClientRect().top });
-                        }
-                        break;
-                    }
-                    parent = parent.parentElement;
-                }
-            }
-        });
-        return items;
-    }
-
-    function exchangeSelectedItem(times = 1) {
-        const sel = document.getElementById('v-sel-event');
-        if (!sel || !sel.value) return alert('Vui lòng mở tab Sự kiện rồi bấm Quét Món!');
-
-        const targetText = sel.value.trim();
-        let count = 0;
-
-        const timer = setInterval(() => {
-            let targetY = -1;
-            const allNodes = document.querySelectorAll('div, span, td, p, button, a');
-
-            for (let node of allNodes) {
-                if (node.innerText && node.innerText.trim() === targetText) {
-                    targetY = node.getBoundingClientRect().top;
-                    break;
-                }
-            }
-
-            let clicked = false;
-            if (targetY > 0) {
-                for (let node of allNodes) {
-                    if (node.innerText && node.innerText.trim() === 'Đổi') {
-                        const rect = node.getBoundingClientRect();
-                        if (Math.abs(rect.top - targetY) < 30) {
-                            triggerFullClick(node);
-                            clicked = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            count++;
-            if (count >= times || !clicked) clearInterval(timer);
-        }, 100);
-    }
-
-    // ENGINE SPEED CONTROL (TỰ TẮT HACK SPEED KHI MỞ RẮN)
+    // SPEED CONTROL & RAF ENGINE
     const originalRAF = window.requestAnimationFrame;
     let lastTime = performance.now();
     let virtualTime = lastTime;
@@ -470,31 +191,13 @@
             lastTime = now;
             const currentSpeed = (window.vltkSpeedEnabled && !isMinigameOpen) ? (window.vltkSelectedSpeed || 1) : 1;
             virtualTime += dt * currentSpeed;
-
-            try {
-                if (typeof Mi !== 'undefined') {
-                    if (!isMinigameOpen) {
-                        Mi.spawnT = 0;
-                        if (Mi.monsters && Mi.monsters.length === 0) {
-                            if (typeof Mi.spawnMonster === 'function') Mi.spawnMonster();
-                            if (Mi.socket && typeof Mi.socket.emit === 'function') Mi.socket.emit('spawn');
-                        }
-                    }
-                    if (window.vltkAutoRemotePick) Mi.pickDist = 99999;
-                    executeDodgeAndAttack();
-                }
-            } catch(e) {}
             callback(virtualTime);
         });
     };
 
-    setInterval(() => {
-        checkMinigameStatus();
-        if (window.vltkAutoCS) executeAutoRebirthSequence();
-        executeAutoThapSequence();
-    }, 120);
+    setInterval(checkMinigameStatus, 150);
 
-    // GIAO DIỆN BẢNG ĐIỀU KHIỂN DOCK
+    // DOCK UI
     function injectUI() {
         if (document.getElementById('vltk-dock-container')) return;
         const targetBody = document.body || document.documentElement;
@@ -503,286 +206,29 @@
         const container = document.createElement('div');
         container.id = 'vltk-dock-container';
         container.innerHTML = `
-            <div id="v-dock-bar" style="
-                position: fixed; top: 120px; left: 10px; z-index: 2147483647;
-                display: flex; flex-direction: column; gap: 8px;
-                background: rgba(24, 24, 37, 0.95); border: 2px solid #f9e2af; border-radius: 12px;
-                padding: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.8); user-select: none;
-            ">
+            <div id="v-dock-bar" style="position: fixed; top: 120px; left: 10px; z-index: 2147483647; display: flex; flex-direction: column; gap: 8px; background: rgba(24, 24, 37, 0.95); border: 2px solid #f9e2af; border-radius: 12px; padding: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.8); user-select: none;">
                 <div id="v-dock-drag" style="cursor: move; text-align: center; color: #f9e2af; font-size: 10px; font-weight: bold; padding-bottom: 2px; border-bottom: 1px dashed #45475a;">🖐️</div>
                 <button id="v-icon-speed" style="background:#313244; color:#f9e2af; border:1px solid #45475a; border-radius:8px; width:42px; height:42px; font-size:20px; cursor:pointer;" title="Hack Speed">⚡</button>
-                <button id="v-icon-event" style="background:#313244; color:#f9e2af; border:1px solid #45475a; border-radius:8px; width:42px; height:42px; font-size:20px; cursor:pointer;" title="Auto Đổi Event">🎁</button>
                 <button id="v-icon-mini" style="background:#313244; color:#f9e2af; border:1px solid #45475a; border-radius:8px; width:42px; height:42px; font-size:20px; cursor:pointer;" title="Auto Mini Game">🎮</button>
-                <button id="v-icon-auto" style="background:#313244; color:#f9e2af; border:1px solid #45475a; border-radius:8px; width:42px; height:42px; font-size:20px; cursor:pointer;" title="Auto Chuyển Sinh & Vào Tháp">🔄</button>
             </div>
-
-            <div id="v-popup-panel" style="
-                position: fixed; top: 120px; left: 75px; z-index: 2147483647;
-                background: #181825; border: 2px solid #f9e2af; border-radius: 10px;
-                padding: 12px; color: #cdd6f4; font-family: Tahoma, Arial, sans-serif;
-                font-size: 12px; width: 260px; box-shadow: 0 5px 20px rgba(0,0,0,0.9);
-                display: none; user-select: none;
-            ">
-                <div id="v-popup-drag" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; cursor: move; background: #232334; padding: 4px 8px; border-radius: 5px;">
-                    <div id="v-popup-title" style="font-weight: bold; color: #f9e2af; font-size: 12px;">🖐️ TÊN BẢNG (Kéo)</div>
-                    <button id="v-popup-close" style="background:#f38ba8; color:#11111b; border:none; border-radius:4px; width:20px; height:20px; cursor:pointer; font-weight:bold;">✖</button>
+            <div id="v-popup-panel" style="position: fixed; top: 120px; left: 75px; z-index: 2147483647; background: #181825; border: 2px solid #f9e2af; border-radius: 10px; padding: 12px; color: #cdd6f4; font-family: Tahoma, Arial, sans-serif; font-size: 12px; width: 240px; display: none; user-select: none;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; background: #232334; padding: 4px 8px; border-radius: 5px;">
+                    <span id="v-popup-title" style="font-weight: bold; color: #f9e2af;">🎮 MINI GAME BOT</span>
+                    <button id="v-popup-close" style="background:#f38ba8; color:#11111b; border:none; border-radius:4px; width:20px; height:20px; cursor:pointer;">✖</button>
                 </div>
-
-                <div id="v-box-speed" class="v-box-content" style="display:none;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                        <span style="color: #a6adc8; font-weight: bold;">⚡ Hack Speed:</span>
-                        <button id="v-btn-sw" style="background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; padding: 3px 10px; font-weight: bold; cursor: pointer;">ON</button>
-                    </div>
-                    <div style="display: flex; gap: 3px; margin-bottom: 4px;">
-                        <button class="v-btn spd" data-val="1" style="flex:1; background:#313244; color:#cdd6f4; border:1px solid #45475a; border-radius:4px; padding:5px 0; cursor:pointer; font-weight:bold;">x1</button>
-                        <button class="v-btn spd" data-val="2" style="flex:1; background:#313244; color:#cdd6f4; border:1px solid #45475a; border-radius:4px; padding:5px 0; cursor:pointer; font-weight:bold;">x2</button>
-                        <button class="v-btn spd" data-val="5" style="flex:1; background:#313244; color:#cdd6f4; border:1px solid #45475a; border-radius:4px; padding:5px 0; cursor:pointer; font-weight:bold;">x5</button>
-                        <button class="v-btn spd" data-val="10" style="flex:1; background:#313244; color:#cdd6f4; border:1px solid #45475a; border-radius:4px; padding:5px 0; cursor:pointer; font-weight:bold;">x10</button>
-                    </div>
-                    <div style="display: flex; gap: 3px;">
-                        <button class="v-btn spd" data-val="20" style="flex:1; background:#313244; color:#fab387; border:1px solid #45475a; border-radius:4px; padding:5px 0; cursor:pointer; font-weight:bold;">x20</button>
-                        <button class="v-btn spd" data-val="50" style="flex:1; background:#313244; color:#f38ba8; border:1px solid #45475a; border-radius:4px; padding:5px 0; cursor:pointer; font-weight:bold;">x50</button>
-                        <button class="v-btn spd" data-val="100" style="flex:1; background:#313244; color:#a6e3a1; border:1px solid #45475a; border-radius:4px; padding:5px 0; cursor:pointer; font-weight:bold;">x100</button>
-                    </div>
-                </div>
-
-                <div id="v-box-event" class="v-box-content" style="display:none;">
-                    <select id="v-sel-event" style="width: 100%; background: #11111b; color: #a6e3a1; border: 1px solid #45475a; border-radius: 3px; padding: 5px; font-size: 11px; margin-bottom: 8px; outline: none;">
-                        <option value="">-- Mở tab Event rồi bấm Quét --</option>
-                    </select>
-                    <div style="display: flex; gap: 4px;">
-                        <button id="v-btn-scan-ev" style="flex:1; background: #89b4fa; color: #11111b; border: none; border-radius: 3px; padding: 6px 0; font-weight: bold; cursor: pointer;">🔍 Quét Món</button>
-                        <button id="v-btn-do-ev10" style="flex:1; background: #fab387; color: #11111b; border: none; border-radius: 3px; padding: 6px 0; font-weight: bold; cursor: pointer;">⚡ Đổi 10L</button>
-                        <button id="v-btn-do-evauto" style="flex:1; background: #a6e3a1; color: #11111b; border: none; border-radius: 3px; padding: 6px 0; font-weight: bold; cursor: pointer;">🔁 Auto Đổi</button>
-                    </div>
-                </div>
-
-                <div id="v-box-mini" class="v-box-content" style="display:none;">
-                    <div style="background: #232334; padding: 8px; border-radius: 6px; margin-bottom: 8px;">
-                        <div style="color: #f9e2af; font-weight: bold; text-align: center; margin-bottom: 6px;">🐍 Vision Engine Snake Bot</div>
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-                            <span style="color: #a6e3a1; font-weight: bold;">Auto Rắn Săn Mồi:</span>
-                            <button id="v-btn-snake-sw" style="background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; padding: 3px 10px; font-weight: bold; cursor: pointer;">ON</button>
-                        </div>
-                        <div style="color: #a6adc8; font-size: 10px; line-height: 1.3;">
-                            * Quét trực tiếp ma trận Pixel Canvas #arena, định vị chấm vàng & chạy thuật toán BFS ăn mồi né tường/thân.
-                        </div>
-                    </div>
-                </div>
-
-                <div id="v-box-auto" class="v-box-content" style="display:none;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-                        <span style="color: #a6adc8; font-weight: bold;">🧲 Auto Nhặt Từ Xa:</span>
-                        <button id="v-btn-pick" style="background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; padding: 2px 8px; font-weight: bold; cursor: pointer;">ON</button>
-                    </div>
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-                        <span style="color: #a6adc8; font-weight: bold;">🔄 Auto Chuyển Sinh:</span>
-                        <button id="v-btn-cs" style="background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; padding: 2px 8px; font-weight: bold; cursor: pointer;">ON</button>
-                    </div>
-
-                    <div style="background: #232334; padding: 6px 8px; border-radius: 5px; margin-top: 6px;">
-                        <div style="color: #fab387; font-weight: bold; text-align: center; margin-bottom: 4px;">🏰 Auto Vào Lại Tháp Khi Chết:</div>
-                        <div style="display: flex; justify-content: space-around; margin-bottom: 4px;">
-                            <label style="cursor: pointer; color: #f9e2af; font-weight: bold;">
-                                <input type="checkbox" id="v-chk-thap1" style="vertical-align: middle;"> Tháp 1
-                            </label>
-                            <label style="cursor: pointer; color: #f9e2af; font-weight: bold;">
-                                <input type="checkbox" id="v-chk-thap2" style="vertical-align: middle;"> Tháp 2
-                            </label>
-                        </div>
-                        <div style="border-top: 1px dashed #45475a; padding-top: 4px; text-align: center;">
-                            <label style="cursor: pointer; color: #a6e3a1; font-weight: bold;">
-                                <input type="checkbox" id="v-chk-dodge" style="vertical-align: middle;"> Né Skill Quái (Chạy quanh)
-                            </label>
-                        </div>
-                    </div>
-
-                    <div style="margin-top: 10px; border-top: 1px solid #45475a; padding-top: 8px;">
-                        <button id="v-btn-update-code" style="width: 100%; background: #89b4fa; color: #11111b; border: none; border-radius: 4px; padding: 6px 0; font-weight: bold; cursor: pointer;">🔄 Cập nhật Tool Mới</button>
-                    </div>
-                </div>
+                <button id="v-btn-update-code" style="width: 100%; background: #89b4fa; color: #11111b; border: none; border-radius: 4px; padding: 6px 0; font-weight: bold; cursor: pointer; margin-top: 6px;">🔄 Cập nhật Tool Mới</button>
             </div>
         `;
-
         targetBody.appendChild(container);
 
-        const dockBar = container.querySelector('#v-dock-bar');
-        const dockDrag = container.querySelector('#v-dock-drag');
         const popup = container.querySelector('#v-popup-panel');
-        const popupDrag = container.querySelector('#v-popup-drag');
-        const popupTitle = container.querySelector('#v-popup-title');
         const popupClose = container.querySelector('#v-popup-close');
-
-        let dragD = false, oxD = 0, oyD = 0;
-        dockDrag.addEventListener('mousedown', (e) => {
-            dragD = true;
-            oxD = e.clientX - dockBar.offsetLeft;
-            oyD = e.clientY - dockBar.offsetTop;
-        });
-        document.addEventListener('mousemove', (e) => {
-            if (dragD) {
-                dockBar.style.left = (e.clientX - oxD) + 'px';
-                dockBar.style.top = (e.clientY - oyD) + 'px';
-            }
-        });
-        document.addEventListener('mouseup', () => dragD = false);
-
-        let dragP = false, oxP = 0, oyP = 0;
-        popupDrag.addEventListener('mousedown', (e) => {
-            if (e.target === popupClose) return;
-            dragP = true;
-            oxP = e.clientX - popup.offsetLeft;
-            oyP = e.clientY - popup.offsetTop;
-        });
-        document.addEventListener('mousemove', (e) => {
-            if (dragP) {
-                popup.style.left = (e.clientX - oxP) + 'px';
-                popup.style.top = (e.clientY - oyP) + 'px';
-            }
-        });
-        document.addEventListener('mouseup', () => dragP = false);
-
-        const btnSpeed = container.querySelector('#v-icon-speed');
-        const btnEvent = container.querySelector('#v-icon-event');
         const btnMini = container.querySelector('#v-icon-mini');
-        const btnAuto = container.querySelector('#v-icon-auto');
-
-        const boxSpeed = container.querySelector('#v-box-speed');
-        const boxEvent = container.querySelector('#v-box-event');
-        const boxMini = container.querySelector('#v-box-mini');
-        const boxAuto = container.querySelector('#v-box-auto');
-
-        function openTab(box, title, activeBtn) {
-            [boxSpeed, boxEvent, boxMini, boxAuto].forEach(b => b.style.display = 'none');
-            [btnSpeed, btnEvent, btnMini, btnAuto].forEach(b => b.style.borderColor = '#45475a');
-
-            if (popup.style.display === 'block' && popupTitle.innerText.includes(title)) {
-                popup.style.display = 'none';
-            } else {
-                popup.style.display = 'block';
-                box.style.display = 'block';
-                popupTitle.innerText = '🖐️ ' + title;
-                activeBtn.style.borderColor = '#a6e3a1';
-            }
-        }
-
-        btnSpeed.onclick = () => openTab(boxSpeed, '⚡ HACK SPEED', btnSpeed);
-        btnEvent.onclick = () => openTab(boxEvent, '🎁 AUTO ĐỔI EVENT', btnEvent);
-        btnMini.onclick = () => openTab(boxMini, '🎮 AUTO MINI GAME', btnMini);
-        btnAuto.onclick = () => openTab(boxAuto, '🔄 AUTO TỰ ĐỘNG', btnAuto);
-
-        popupClose.onclick = () => {
-            popup.style.display = 'none';
-            [btnSpeed, btnEvent, btnMini, btnAuto].forEach(b => b.style.borderColor = '#45475a');
-        };
-
-        const btnSnakeSw = container.querySelector('#v-btn-snake-sw');
-        btnSnakeSw.onclick = () => {
-            window.vltkAutoSnake = !window.vltkAutoSnake;
-            btnSnakeSw.innerText = window.vltkAutoSnake ? 'ON' : 'OFF';
-            btnSnakeSw.style.background = window.vltkAutoSnake ? '#a6e3a1' : '#f38ba8';
-        };
-
-        const selEvent = container.querySelector('#v-sel-event');
-        const btnScanEv = container.querySelector('#v-btn-scan-ev');
-        const btnDoEv10 = container.querySelector('#v-btn-do-ev10');
-        const btnDoEvAuto = container.querySelector('#v-btn-do-evauto');
-
-        btnScanEv.onclick = () => {
-            const list = getEventItemList();
-            selEvent.innerHTML = '';
-            if (list.length === 0) {
-                selEvent.innerHTML = '<option value="">(Không tìm thấy, mở tab Event thử lại)</option>';
-                alert('Vui lòng mở tab Sự kiện trong game trước rồi nhấn Quét Món lại!');
-            } else {
-                list.forEach(item => {
-                    const opt = document.createElement('option');
-                    opt.value = item.text;
-                    opt.innerText = item.text;
-                    selEvent.appendChild(opt);
-                });
-            }
-        };
-
-        btnDoEv10.onclick = () => exchangeSelectedItem(10);
-
-        let isAutoEvRunning = false;
-        btnDoEvAuto.onclick = () => {
-            isAutoEvRunning = !isAutoEvRunning;
-            if (isAutoEvRunning) {
-                btnDoEvAuto.innerText = '⏹️ Dừng';
-                btnDoEvAuto.style.background = '#f38ba8';
-                autoEventInterval = setInterval(() => exchangeSelectedItem(1), 100);
-            } else {
-                btnDoEvAuto.innerText = '🔁 Auto Đổi';
-                btnDoEvAuto.style.background = '#a6e3a1';
-                clearInterval(autoEventInterval);
-            }
-        };
-
         const btnUpdateCode = container.querySelector('#v-btn-update-code');
+
+        btnMini.onclick = () => { popup.style.display = (popup.style.display === 'none') ? 'block' : 'none'; };
+        popupClose.onclick = () => { popup.style.display = 'none'; };
         btnUpdateCode.onclick = () => performAutoUpdate(btnUpdateCode);
-
-        const btnSw = container.querySelector('#v-btn-sw');
-        btnSw.onclick = () => {
-            window.vltkSpeedEnabled = !window.vltkSpeedEnabled;
-            btnSw.innerText = window.vltkSpeedEnabled ? 'ON' : 'OFF';
-            btnSw.style.background = window.vltkSpeedEnabled ? '#a6e3a1' : '#f38ba8';
-        };
-
-        container.querySelectorAll('.v-btn.spd').forEach(btn => {
-            btn.onclick = () => {
-                container.querySelectorAll('.v-btn.spd').forEach(b => {
-                    b.style.background = '#313244';
-                    b.style.color = '#cdd6f4';
-                });
-                btn.style.background = '#a6e3a1';
-                btn.style.color = '#11111b';
-                window.vltkSelectedSpeed = parseFloat(btn.dataset.val);
-                window.vltkSpeedEnabled = true;
-                btnSw.innerText = 'ON';
-                btnSw.style.background = '#a6e3a1';
-            };
-        });
-
-        const btnPick = container.querySelector('#v-btn-pick');
-        const btnCS = container.querySelector('#v-btn-cs');
-
-        btnPick.onclick = () => {
-            window.vltkAutoRemotePick = !window.vltkAutoRemotePick;
-            btnPick.innerText = window.vltkAutoRemotePick ? 'ON' : 'OFF';
-            btnPick.style.background = window.vltkAutoRemotePick ? '#a6e3a1' : '#f38ba8';
-        };
-
-        btnCS.onclick = () => {
-            window.vltkAutoCS = !window.vltkAutoCS;
-            btnCS.innerText = window.vltkAutoCS ? 'ON' : 'OFF';
-            btnCS.style.background = window.vltkAutoCS ? '#a6e3a1' : '#f38ba8';
-        };
-
-        const chkThap1 = container.querySelector('#v-chk-thap1');
-        const chkThap2 = container.querySelector('#v-chk-thap2');
-        const chkDodge = container.querySelector('#v-chk-dodge');
-
-        chkThap1.onchange = (e) => {
-            window.vltkAutoThap1 = e.target.checked;
-            if (e.target.checked) {
-                window.vltkAutoThap2 = false;
-                chkThap2.checked = false;
-            }
-        };
-
-        chkThap2.onchange = (e) => {
-            window.vltkAutoThap2 = e.target.checked;
-            if (e.target.checked) {
-                window.vltkAutoThap1 = false;
-                chkThap1.checked = false;
-            }
-        };
-
-        chkDodge.onchange = (e) => {
-            window.vltkDodgeSkill = e.target.checked;
-        };
     }
 
     injectUI();
