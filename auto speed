@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         VLTK Idle - Auto Snake Canvas #arena v36.0
+// @name         VLTK Idle - Auto Snake Game Arena v37.0
 // @namespace    http://tampermonkey.net/
-// @version      36.0
-// @description  Tối ưu riêng cho Canvas #arena - Click tọa độ Chơi lại & Điều khiển phím
+// @version      37.0
+// @description  Tự động nhấp "Chơi lại" & Đổi hướng di chuyển Rắn săn mồi chuẩn Canvas #arena
 // @match        *://hoainiem2003.net/*
 // @allFrames    true
 // @grant        none
@@ -61,30 +61,30 @@
         return found;
     }
 
-    // 🐍 XỬ LÝ RIÊNG CHO CANVAS #ARENA
-    let snakeDirIndex = 0;
-    const snakeKeys = [
-        { name: 'ArrowRight', code: 39 },
-        { name: 'ArrowDown', code: 40 },
-        { name: 'ArrowLeft', code: 37 },
-        { name: 'ArrowUp', code: 38 }
+    // 🐍 XỬ LÝ AUTO RẮN SĂN MỒI TRÊN CANVAS #ARENA
+    let snakeStep = 0;
+    const arrowKeys = [
+        { code: 39, name: 'ArrowRight' },
+        { code: 40, name: 'ArrowDown' },
+        { code: 37, name: 'ArrowLeft' },
+        { code: 38, name: 'ArrowUp' }
     ];
 
-    function processCanvasArenaSnake() {
+    function processAutoSnakeArena() {
         if (!window.vltkAutoSnake) return;
 
         const cv = document.getElementById('arena');
         if (!cv) return;
 
         try {
-            // 1. Tự động click vào vị trí nút "Chơi lại" trên Canvas
             const rect = cv.getBoundingClientRect();
             if (rect.width > 0 && rect.height > 0) {
-                const clickX = rect.left + rect.width * 0.38; // Vị trí nút Chơi lại
+                // 1. Tự động click nút "Chơi lại" ở khu vực giữa Canvas (X: 38%, Y: 63%)
+                const clickX = rect.left + rect.width * 0.38;
                 const clickY = rect.top + rect.height * 0.63;
 
-                ['mousedown', 'mouseup', 'click'].forEach(evtType => {
-                    const mEvt = new MouseEvent(evtType, {
+                ['mousedown', 'mouseup', 'click'].forEach(evtName => {
+                    const mEvt = new MouseEvent(evtName, {
                         clientX: clickX,
                         clientY: clickY,
                         bubbles: true,
@@ -92,28 +92,39 @@
                     });
                     cv.dispatchEvent(mEvt);
                 });
+
+                // 2. Tự động click bổ sung vào vị trí nút "Chơi" ban đầu (X: 50%, Y: 50%)
+                const centerClickX = rect.left + rect.width * 0.5;
+                const centerClickY = rect.top + rect.height * 0.5;
+                const cEvt = new MouseEvent('click', {
+                    clientX: centerClickX,
+                    clientY: centerClickY,
+                    bubbles: true
+                });
+                cv.dispatchEvent(cEvt);
             }
 
-            // 2. Gửi sự kiện phím trực tiếp vào Canvas arena
-            const k = snakeKeys[snakeDirIndex % 4];
+            // 3. Phát lệnh bấm phím di chuyển xoay vòng cho con rắn
+            const keyObj = arrowKeys[snakeStep % 4];
             ['keydown', 'keyup'].forEach(type => {
                 const kEvt = new KeyboardEvent(type, {
-                    key: k.name,
-                    code: k.name,
-                    keyCode: k.code,
-                    which: k.code,
+                    key: keyObj.name,
+                    code: keyObj.name,
+                    keyCode: keyObj.code,
+                    which: keyObj.code,
                     bubbles: true,
                     cancelable: true
                 });
                 cv.dispatchEvent(kEvt);
                 window.dispatchEvent(kEvt);
+                document.dispatchEvent(kEvt);
             });
 
-            snakeDirIndex++;
+            snakeStep++;
         } catch(e) {}
     }
 
-    // CẬP NHẬT CODE MỚI TỪ LINK RAW
+    // CẬP NHẬT CODE MỚI
     function performAutoUpdate(btnUpdate) {
         btnUpdate.innerText = '⏳ Đang tải...';
         btnUpdate.style.background = '#fab387';
@@ -134,14 +145,14 @@
             });
     }
 
-    // KIỂM TRA SỰ XUẤT HIỆN CỦA CANVAS #ARENA
+    // KIỂM TRA TRẠNG THÁI CANVAS #ARENA
     function checkMinigameStatus() {
         try {
             const arenaCanvas = document.getElementById('arena');
             isMinigameOpen = !!(arenaCanvas && arenaCanvas.offsetWidth > 0);
 
             if (isMinigameOpen) {
-                processCanvasArenaSnake();
+                processAutoSnakeArena();
             }
         } catch(e) { 
             isMinigameOpen = false; 
@@ -310,13 +321,14 @@
         });
     };
 
+    // VÒNG LẶP DẦN ĐIỀU KHIỂN RẮN DÀNH CHO CANVAS
     setInterval(() => {
         checkMinigameStatus();
         if (window.vltkAutoCS) executeAutoRebirthSequence();
         executeAutoThapSequence();
     }, 150);
 
-    // GIAO DIỆN DOCK
+    // GIAO DIỆN BẢNG ĐIỀU KHIỂN DOCK
     function injectUI() {
         if (document.getElementById('vltk-dock-container')) return;
         const targetBody = document.body || document.documentElement;
@@ -381,13 +393,13 @@
 
                 <div id="v-box-mini" class="v-box-content" style="display:none;">
                     <div style="background: #232334; padding: 8px; border-radius: 6px; margin-bottom: 8px;">
-                        <div style="color: #f9e2af; font-weight: bold; text-align: center; margin-bottom: 6px;">🐍 Tùy Chỉnh Mini Game Canvas</div>
+                        <div style="color: #f9e2af; font-weight: bold; text-align: center; margin-bottom: 6px;">🐍 Tùy Chỉnh Auto Snake #arena</div>
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
                             <span style="color: #a6e3a1; font-weight: bold;">Auto Rắn Săn Mồi:</span>
                             <button id="v-btn-snake-sw" style="background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; padding: 3px 10px; font-weight: bold; cursor: pointer;">ON</button>
                         </div>
                         <div style="color: #a6adc8; font-size: 10px; line-height: 1.3;">
-                            * Tự động gửi phím vào Canvas #arena và click vị trí "Chơi lại".
+                            * Tự động phát phím di chuyển và gửi sự kiện click vào khu vực nút Chơi lại trên Canvas #arena.
                         </div>
                     </div>
                 </div>
