@@ -15,7 +15,7 @@
     'use strict';
 
     // 🔗 DÁN LINK CHỨA CODE MỚI CỦA BẠN VÀO ĐÂY (GitHub Raw / Gist Raw / Pastebin Raw)
-    const REMOTE_CODE_URL = 'https://raw.githubusercontent.com/username/repository/main/vltk_tool.js';
+    const REMOTE_CODE_URL = 'https://raw.githubusercontent.com/hunterkay01/vltk-auto-tool/refs/heads/main/auto%20speed';
 
     window.vltkSpeedEnabled = true;
     window.vltkSelectedSpeed = 1;
