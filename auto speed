@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         VLTK Idle - Auto Snake Game Arena v37.0
+// @name         VLTK Idle - Full Auto & Canvas Snake v38.1
 // @namespace    http://tampermonkey.net/
-// @version      37.0
-// @description  Tự động nhấp "Chơi lại" & Đổi hướng di chuyển Rắn săn mồi chuẩn Canvas #arena
+// @version      38.1
+// @description  Tool tổng hợp: Hack Speed, Auto CS, Auto Tháp, Auto Event & Canvas Snake Bot
 // @match        *://hoainiem2003.net/*
 // @allFrames    true
 // @grant        none
@@ -77,9 +77,11 @@
         if (!cv) return;
 
         try {
+            cv.focus();
             const rect = cv.getBoundingClientRect();
+
             if (rect.width > 0 && rect.height > 0) {
-                // 1. Tự động click nút "Chơi lại" ở khu vực giữa Canvas (X: 38%, Y: 63%)
+                // Click khu vực nút "Chơi lại" trên Canvas (X: 38%, Y: 63%)
                 const clickX = rect.left + rect.width * 0.38;
                 const clickY = rect.top + rect.height * 0.63;
 
@@ -92,19 +94,9 @@
                     });
                     cv.dispatchEvent(mEvt);
                 });
-
-                // 2. Tự động click bổ sung vào vị trí nút "Chơi" ban đầu (X: 50%, Y: 50%)
-                const centerClickX = rect.left + rect.width * 0.5;
-                const centerClickY = rect.top + rect.height * 0.5;
-                const cEvt = new MouseEvent('click', {
-                    clientX: centerClickX,
-                    clientY: centerClickY,
-                    bubbles: true
-                });
-                cv.dispatchEvent(cEvt);
             }
 
-            // 3. Phát lệnh bấm phím di chuyển xoay vòng cho con rắn
+            // Gửi sự kiện bàn phím vào Canvas #arena
             const keyObj = arrowKeys[snakeStep % 4];
             ['keydown', 'keyup'].forEach(type => {
                 const kEvt = new KeyboardEvent(type, {
@@ -113,18 +105,18 @@
                     keyCode: keyObj.code,
                     which: keyObj.code,
                     bubbles: true,
-                    cancelable: true
+                    cancelable: true,
+                    composed: true
                 });
                 cv.dispatchEvent(kEvt);
                 window.dispatchEvent(kEvt);
-                document.dispatchEvent(kEvt);
             });
 
             snakeStep++;
         } catch(e) {}
     }
 
-    // CẬP NHẬT CODE MỚI
+    // CẬP NHẬT CODE MỚI TỪ LINK RAW
     function performAutoUpdate(btnUpdate) {
         btnUpdate.innerText = '⏳ Đang tải...';
         btnUpdate.style.background = '#fab387';
@@ -292,7 +284,7 @@
         }, 100);
     }
 
-    // ENGINE SPEED CONTROL
+    // ENGINE SPEED CONTROL (TỰ TẮT HACK SPEED KHI MỞ RẮN)
     const originalRAF = window.requestAnimationFrame;
     let lastTime = performance.now();
     let virtualTime = lastTime;
@@ -321,7 +313,6 @@
         });
     };
 
-    // VÒNG LẶP DẦN ĐIỀU KHIỂN RẮN DÀNH CHO CANVAS
     setInterval(() => {
         checkMinigameStatus();
         if (window.vltkAutoCS) executeAutoRebirthSequence();
@@ -399,7 +390,7 @@
                             <button id="v-btn-snake-sw" style="background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; padding: 3px 10px; font-weight: bold; cursor: pointer;">ON</button>
                         </div>
                         <div style="color: #a6adc8; font-size: 10px; line-height: 1.3;">
-                            * Tự động phát phím di chuyển và gửi sự kiện click vào khu vực nút Chơi lại trên Canvas #arena.
+                            * Tự động phát phím di chuyển và click vị trí "Chơi lại" trên Canvas #arena.
                         </div>
                     </div>
                 </div>
