@@ -1,13 +1,11 @@
 // ==UserScript==
-// @name         VLTK Idle - MiniGame & Auto Snake v35.1
+// @name         VLTK Idle - Auto Snake Game Fix v35.2
 // @namespace    http://tampermonkey.net/
-// @version      35.1
-// @description  Bổ sung Tab Mini Game (🎮) & Fix Auto Rắn Săn Mồi
+// @version      35.2
+// @description  Tối ưu can thiệp Canvas & Tự động chạy Rắn Săn Mồi
 // @match        *://hoainiem2003.net/*
 // @allFrames    true
-// @grant        GM_setValue
-// @grant        GM_getValue
-// @grant        GM_xmlhttpRequest
+// @grant        none
 // @run-at       document-end
 // ==/UserScript==
 
@@ -26,7 +24,7 @@
     window.vltkAutoThap1 = false;
     window.vltkAutoThap2 = false;
     window.vltkDodgeSkill = false;
-    window.vltkAutoSnake = true; // Bật sẵn Auto Rắn
+    window.vltkAutoSnake = true;
 
     let isCsProcessing = false;
     let dodgeAngle = 0;
@@ -63,128 +61,87 @@
         return found;
     }
 
-    // GỬI LỆNH PHÍM BẤM ĐIỀU KHIỂN RẮN
-    function sendSnakeKey(keyName, keyCode) {
-        const keyEvents = ['keydown', 'keyup'];
-        const targets = [window, document, document.body];
-        document.querySelectorAll('canvas').forEach(c => targets.push(c));
-
-        keyEvents.forEach(type => {
-            targets.forEach(target => {
-                if (!target) return;
-                try {
-                    const event = new KeyboardEvent(type, {
-                        key: keyName,
-                        code: keyName,
-                        keyCode: keyCode,
-                        which: keyCode,
-                        bubbles: true,
-                        cancelable: true
-                    });
-                    target.dispatchEvent(event);
-                } catch(e) {}
-            });
-        });
-    }
-
-    // 🐍 XỬ LÝ AUTO RẮN SĂN MỒI
-    let lastSnakeMove = 0;
+    // 🐍 HÀM ĐIỀU KHIỂN VÀ CAN THIỆP RẮN SĂN MỒI
     let snakeDirIndex = 0;
-    const snakeDirs = [
-        { name: 'ArrowRight', code: 39 },
-        { name: 'ArrowDown', code: 40 },
-        { name: 'ArrowLeft', code: 37 },
-        { name: 'ArrowUp', code: 38 }
-    ];
+    const keyCodes = [39, 40, 37, 38]; // Phải, Xuống, Trái, Lên
+    const keyNames = ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'];
 
     function processAutoSnakeGame() {
         if (!window.vltkAutoSnake) return;
 
         try {
-            // Tự động bấm "Chơi lại" khi kết thúc
+            // 1. Tự động click nút "Chơi lại" hoặc nút "Chơi" nếu đang ở màn hình kết thúc
             clickByText('Chơi lại');
+            clickByText('Chơi');
 
-            // Điều khiển hướng đi của Rắn
-            let sg = null;
-            if (typeof Mi !== 'undefined') {
-                sg = Mi.snakeGame || Mi.miniGame || Mi.snake;
-            }
-            if (!sg) sg = window.snakeGame || window.snake;
-
-            if (sg && sg.snake && sg.food) {
-                const head = sg.snake[0];
-                const food = sg.food;
-                if (head && food) {
-                    if (head.x < food.x) sendSnakeKey('ArrowRight', 39);
-                    else if (head.x > food.x) sendSnakeKey('ArrowLeft', 37);
-                    else if (head.y < food.y) sendSnakeKey('ArrowDown', 40);
-                    else if (head.y > food.y) sendSnakeKey('ArrowUp', 38);
-                    return;
+            // 2. Can thiệp trực tiếp vào Engine game để di chuyển Rắn
+            if (typeof Mi !== 'undefined' && Mi.snake) {
+                if (typeof Mi.snake.changeDir === 'function') {
+                    Mi.snake.changeDir(snakeDirIndex % 4);
+                } else if (typeof Mi.snake.setDir === 'function') {
+                    Mi.snake.setDir(snakeDirIndex % 4);
+                } else {
+                    Mi.snake.dir = snakeDirIndex % 4;
                 }
+                snakeDirIndex++;
+                return;
             }
 
-            // Dự phòng di chuyển theo chu kỳ
-            const now = Date.now();
-            if (now - lastSnakeMove > 200) {
-                lastSnakeMove = now;
-                const dir = snakeDirs[snakeDirIndex % 4];
-                sendSnakeKey(dir.name, dir.code);
-                snakeDirIndex++;
-            }
+            // 3. Gửi phím giả lập tần số cao vào Canvas và Window
+            const dirIdx = snakeDirIndex % 4;
+            const kCode = keyCodes[dirIdx];
+            const kName = keyNames[dirIdx];
+
+            const eventInit = {
+                key: kName,
+                code: kName,
+                keyCode: kCode,
+                which: kCode,
+                bubbles: true,
+                cancelable: true
+            };
+
+            const kEventDown = new KeyboardEvent('keydown', eventInit);
+            const kEventUp = new KeyboardEvent('keyup', eventInit);
+
+            window.dispatchEvent(kEventDown);
+            document.dispatchEvent(kEventDown);
+
+            const canvases = document.querySelectorAll('canvas');
+            canvases.forEach(cv => {
+                cv.dispatchEvent(kEventDown);
+                cv.dispatchEvent(kEventUp);
+            });
+
+            snakeDirIndex++;
         } catch(e) {}
     }
 
-    // CẬP NHẬT CODE MỚI
+    // CẬP NHẬT CODE MỚI TỪ LINK RAW
     function performAutoUpdate(btnUpdate) {
         btnUpdate.innerText = '⏳ Đang tải...';
         btnUpdate.style.background = '#fab387';
 
-        if (typeof GM_xmlhttpRequest !== 'undefined') {
-            GM_xmlhttpRequest({
-                method: 'GET',
-                url: REMOTE_CODE_URL + '?t=' + new Date().getTime(),
-                onload: function(response) {
-                    if (response.status === 200 && response.responseText.length > 100) {
-                        try {
-                            new Function(response.responseText);
-                            localStorage.setItem('VLTK_CUSTOM_SCRIPT', response.responseText);
-                            btnUpdate.innerText = '✅ Thành công!';
-                            btnUpdate.style.background = '#a6e3a1';
-                            alert('Cập nhật bản mới thành công! Trang web sẽ tự động tải lại.');
-                            location.reload();
-                        } catch(e) {
-                            alert('Lỗi: Code mới tải về bị lỗi cú pháp!');
-                            btnUpdate.innerText = '❌ Lỗi Code';
-                            btnUpdate.style.background = '#f38ba8';
-                        }
-                    } else {
-                        alert('Không thể kết nối lấy code mới! Vui lòng kiểm tra lại Link.');
-                        btnUpdate.innerText = '🔄 Cập nhật Tool';
-                        btnUpdate.style.background = '#89b4fa';
-                    }
-                },
-                onerror: function() {
-                    alert('Lỗi kết nối mạng khi tải bản cập nhật!');
-                    btnUpdate.innerText = '🔄 Cập nhật Tool';
-                    btnUpdate.style.background = '#89b4fa';
-                }
+        fetch(REMOTE_CODE_URL + '?t=' + new Date().getTime())
+            .then(res => res.text())
+            .then(code => {
+                localStorage.setItem('VLTK_CUSTOM_SCRIPT', code);
+                btnUpdate.innerText = '✅ Thành công!';
+                btnUpdate.style.background = '#a6e3a1';
+                alert('Cập nhật bản mới thành công! Trang web sẽ tự động tải lại.');
+                location.reload();
+            })
+            .catch(() => {
+                alert('Lỗi kết nối tải bản cập nhật!');
+                btnUpdate.innerText = '🔄 Cập nhật Tool';
+                btnUpdate.style.background = '#89b4fa';
             });
-        } else {
-            fetch(REMOTE_CODE_URL + '?t=' + new Date().getTime())
-                .then(res => res.text())
-                .then(code => {
-                    localStorage.setItem('VLTK_CUSTOM_SCRIPT', code);
-                    alert('Cập nhật thành công!');
-                    location.reload();
-                })
-                .catch(() => alert('Lỗi tải bản cập nhật!'));
-        }
     }
 
-    // KIỂM TRA MINI-GAME
+    // KIỂM TRA MẮT THẤY RẮN SĂN MỒI
     function checkMinigameStatus() {
         try {
-            const gameKeywords = ['Rắn săn mồi', 'Giải trí', 'Trò chơi', 'Mini Game', 'Xếp gạch'];
+            const gameKeywords = ['Rắn săn mồi', 'Giải trí', 'Trò chơi', 'Mini Game', 'Kết thúc!'];
             const allElements = document.querySelectorAll('div, span, iframe, section, canvas');
             let detected = false;
 
@@ -198,7 +155,7 @@
                 }
             }
 
-            if (typeof Mi !== 'undefined' && (Mi.inMinigame || Mi.isMinigameOpen || Mi.snakeGame)) {
+            if (typeof Mi !== 'undefined' && (Mi.inMinigame || Mi.isMinigameOpen || Mi.snakeGame || Mi.snake)) {
                 detected = true;
             }
 
@@ -212,7 +169,7 @@
         }
     }
 
-    // THÁP & NÉ SKILL
+    // AUTO THÁP & NÉ SKILL
     function executeAutoThapSequence() {
         if (!window.vltkAutoThap1 && !window.vltkAutoThap2) return;
         try {
@@ -345,7 +302,7 @@
         }, 100);
     }
 
-    // ENGINE FRAMEWORK
+    // ENGINE SPEED CONTROL
     const originalRAF = window.requestAnimationFrame;
     let lastTime = performance.now();
     let virtualTime = lastTime;
@@ -374,13 +331,14 @@
         });
     };
 
+    // VÒNG LẶP KIỂM TRA TỐC ĐỘ CAO CHO RẮN SĂN MỒI
     setInterval(() => {
         checkMinigameStatus();
         if (window.vltkAutoCS) executeAutoRebirthSequence();
         executeAutoThapSequence();
     }, 150);
 
-    // GIAO DIỆN BẢNG ĐIỀU KHIỂN CÓ NÚT MINI GAME (🎮)
+    // GIAO DIỆN BẢNG ĐIỀU KHIỂN DOCK
     function injectUI() {
         if (document.getElementById('vltk-dock-container')) return;
         const targetBody = document.body || document.documentElement;
@@ -443,7 +401,6 @@
                     </div>
                 </div>
 
-                <!-- BOX 3: TAB MINI GAME (🎮) -->
                 <div id="v-box-mini" class="v-box-content" style="display:none;">
                     <div style="background: #232334; padding: 8px; border-radius: 6px; margin-bottom: 8px;">
                         <div style="color: #f9e2af; font-weight: bold; text-align: center; margin-bottom: 6px;">🐍 Tùy Chỉnh Mini Game</div>
@@ -452,12 +409,11 @@
                             <button id="v-btn-snake-sw" style="background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; padding: 3px 10px; font-weight: bold; cursor: pointer;">ON</button>
                         </div>
                         <div style="color: #a6adc8; font-size: 10px; line-height: 1.3;">
-                            * Tự động phát phím di chuyển rắn và bấm "Chơi lại" liên tục khi bị hạ gục.
+                            * Tự động bấm "Chơi lại" và xoay hướng di chuyển rắn liên tục.
                         </div>
                     </div>
                 </div>
 
-                <!-- BOX 4: AUTO TỰ ĐỘNG -->
                 <div id="v-box-auto" class="v-box-content" style="display:none;">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
                         <span style="color: #a6adc8; font-weight: bold;">🧲 Auto Nhặt Từ Xa:</span>
